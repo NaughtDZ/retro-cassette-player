@@ -1,6 +1,6 @@
 # 复古磁带播放器（Retro Cassette Player）
 
-**v1.0.0** · Python + PySide6 · 全矢量界面 · 自带静态 ffmpeg
+**v1.0.1** · Python + PySide6 · 全矢量界面 · 自带静态 ffmpeg
 
 ![主界面](docs/images/hero.png)
 
@@ -108,6 +108,7 @@ uv pip install -r requirements.txt
 | `config\settings.json` | 软件配置：音量、皮肤、效果器参数与分区开关、窗口位置 | ❌ 已忽略 |
 | `.cache\session.json` | 播放会话：列表、当前曲目、播放模式、进度（含元数据快照） | ❌ 已忽略 |
 | `.cache\covers\` | 封面缓存 | ❌ 已忽略 |
+| `config\app.log` | 运行日志（pythonw 无控制台时 `print` 会被静默丢弃，这里兜底落盘便于排查） | ❌ 已忽略 |
 | `tools\dusk\dusk_dsp.dll` | 磁带 DSP 编译产物 | ❌ 已忽略 |
 | `icon.ico` / `*.lnk` | 图标与启动快捷方式（可由脚本再生成） | ❌ 已忽略 |
 
