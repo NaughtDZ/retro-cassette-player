@@ -33,10 +33,10 @@
   <path d="M 138 0 L 670 0 L 670 15 A 7 7 0 0 1 663 22 L 145 22 A 7 7 0 0 1 138 15 Z"
         fill="url(#slot)"/>
   <line x1="146" y1="23.5" x2="662" y2="23.5" stroke="#081019" stroke-width="2.6" opacity="0.6"/>
-  <!-- 槽腔两侧导轨卡扣 -->
-  <g fill="#1b4157" stroke="#0d2a3c" stroke-width="1.4">
-    <rect x="118" y="3" width="16" height="27" rx="4.5"/>
-    <rect x="674" y="3" width="16" height="27" rx="4.5"/>
+  <!-- 槽腔两侧导轨卡扣（做成亮色凸起：以前是暗色方块，容易被误认成没对齐的按钮槽） -->
+  <g fill="#2d6a8c" stroke="#12354a" stroke-width="1.2">
+    <rect x="116" y="2" width="9" height="28" rx="4.5"/>
+    <rect x="683" y="2" width="9" height="28" rx="4.5"/>
   </g>
 
   <!-- 上缘唇边高光 + 机身顶部环境反光 -->
@@ -44,17 +44,18 @@
   <rect x="76" y="2" width="656" height="16" fill="url(#glow)"/>
 
   <!-- 品牌刻字（磁带下沿与按钮面板之间的窄带） -->
-  <text x="404" y="45" font-family="'Segoe UI','Microsoft YaHei',sans-serif" font-size="10.5"
+  <text x="404" y="40" font-family="'Segoe UI','Microsoft YaHei',sans-serif" font-size="10.5"
         text-anchor="middle" fill="#8dbdd6" opacity="0.92">R E T R O   D E C K</text>
 
-  <!-- 控制按钮下沉面板 -->
-  <rect x="156" y="52" width="382" height="56" rx="12" fill="url(#panel)" opacity="0.78"/>
-  <rect x="156" y="52" width="382" height="56" rx="12" fill="none" stroke="#0d2a3c" stroke-width="1.6"/>
-  <rect x="158" y="54" width="378" height="52" rx="11" fill="none" stroke="#5590b3" stroke-width="1" opacity="0.3"/>
+  <!-- 控制按钮下沉面板：必须覆盖 layout 里全部 7 颗键
+       （btn_prev 162 → btn_console 580，留 6px 余量），纵向对准按钮 48..94 -->
+  <rect x="156" y="44" width="430" height="54" rx="12" fill="url(#panel)" opacity="0.78"/>
+  <rect x="156" y="44" width="430" height="54" rx="12" fill="none" stroke="#0d2a3c" stroke-width="1.6"/>
+  <rect x="158" y="46" width="426" height="50" rx="11" fill="none" stroke="#5590b3" stroke-width="1" opacity="0.3"/>
 
-  <!-- 窗口按钮下沉面板 -->
-  <rect x="578" y="54" width="180" height="52" rx="10" fill="url(#panel)" opacity="0.66"/>
-  <rect x="578" y="54" width="180" height="52" rx="10" fill="none" stroke="#0d2a3c" stroke-width="1.4"/>
+  <!-- 窗口按钮下沉面板：对准 win_min..win_close（586..746，纵向 52..86） -->
+  <rect x="580" y="46" width="172" height="46" rx="10" fill="url(#panel)" opacity="0.66"/>
+  <rect x="580" y="46" width="172" height="46" rx="10" fill="none" stroke="#0d2a3c" stroke-width="1.4"/>
 
   <!-- 左侧留给音量旋钮（由程序绘制），这里只保留右侧扬声器网孔 -->
   <g fill="#123a51" opacity="0.9">
