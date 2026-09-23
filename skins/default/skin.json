@@ -149,6 +149,12 @@
     "console_zone": "console_zone.svg",
     "console_knob": "console_knob.svg",
     "console_knob_lit": "console_knob_lit.svg",
-    "console_knob_pointer": "console_knob_pointer.svg"
+    "console_knob_pointer": "console_knob_pointer.svg",
+    "console_switch": "console_switch.svg",
+    "console_switch_lever": "console_switch_lever.svg",
+    "console_switch_dot": "console_switch_dot.svg",
+    "console_switch_dot_on": "console_switch_dot_on.svg",
+    "console_led_off": "console_led_off.svg",
+    "console_led_on": "console_led_on.svg"
   }
 }

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12">
+  <!-- 分区开关指示灯（12x12，中心即灯位） -->
+  <circle cx="6" cy="6" r="4.8" fill="#000000" opacity="0.63"/>
+  <circle cx="6" cy="6" r="3.2" fill="#764038"/>
+</svg>

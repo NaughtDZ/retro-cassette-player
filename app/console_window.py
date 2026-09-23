@@ -224,14 +224,19 @@ class ConsoleSurface(QWidget):
         """小 LED 拨钮：亮绿=开，暗红=关（复古机上的指示灯按键）。"""
         rr = QRectF(r)
         led = QPointF(rr.left() + 6.5, rr.center().y())
-        p.setPen(Qt.NoPen)
-        p.setBrush(QColor(0, 0, 0, 160))
-        p.drawEllipse(led, 4.8, 4.8)
-        if on:
-            p.setBrush(QColor(170, 255, 195, 70))
-            p.drawEllipse(led, 5.8, 5.8)
-        p.setBrush(QColor(112, 226, 142) if on else QColor(118, 64, 56))
-        p.drawEllipse(led, 3.2, 3.2)
+        # v1.1.0：指示灯本身可换成 console_led_on / console_led_off（图 12x12，中心即灯位）
+        if self.skin.has_asset("console_led_on"):
+            self.skin.draw_asset(p, "console_led_on" if on else "console_led_off",
+                                 QRectF(led.x() - 6.0, led.y() - 6.0, 12.0, 12.0))
+        else:
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor(0, 0, 0, 160))
+            p.drawEllipse(led, 4.8, 4.8)
+            if on:
+                p.setBrush(QColor(170, 255, 195, 70))
+                p.drawEllipse(led, 5.8, 5.8)
+            p.setBrush(QColor(112, 226, 142) if on else QColor(118, 64, 56))
+            p.drawEllipse(led, 3.2, 3.2)
         f = QFont()
         f.setPointSizeF(6.6)
         f.setBold(True)
@@ -405,6 +410,12 @@ class ConsoleSurface(QWidget):
         p.drawText(QRectF(r.left() - 20, r.bottom() + 10, r.width() + 40, 13),
                    Qt.AlignHCenter | Qt.AlignVCenter, c.value_text(self.values.get(c.name, c.lo)))
 
+    def _paint_switch_lever(self, p, cx, cy, cap, t, span):
+        """程序画挡位拨杆（无 console_switch_lever 资源时用）。"""
+        ca, sa = self._knob_dir(t, span)
+        p.setPen(QPen(QColor("#e9e2cd"), 2.6, Qt.SolidLine, Qt.RoundCap))
+        p.drawLine(QPointF(cx, cy), QPointF(cx + ca * cap * 0.86, cy + sa * cap * 0.86))
+
     def _paint_console_knob_pointer(self, p, cx, cy, cap, frac, span):
         """程序画 console 旋钮指针（无 console_knob_pointer 资源时用）。"""
         ca, sa = self._knob_dir(frac, span)
@@ -452,6 +463,26 @@ class ConsoleSurface(QWidget):
         # min(240, 40*(n-1))，2 档时只有 40° 宽，灯的位置和指针完全对不上，
         # 看上去就像"灯和旋钮反着走"。
         span = 270.0
+
+        # v1.1.0：凹坑+键帽可换成 console_switch，拨杆可换 console_switch_lever（单根、
+        # 中心即转轴、竖直朝上），挡位灯用 console_switch_dot / _dot_on。标签与数值仍程序画。
+        if self.skin.has_asset("console_switch"):
+            self.skin.draw_asset(p, "console_switch", r)
+            for i in range(n):
+                _t = i / (n - 1.0) if n > 1 else 0.5
+                _ca, _sa = self._knob_dir(_t, span)
+                _dx, _dy = cx + _ca * (rad - 3.0), cy + _sa * (rad - 3.0)
+                self.skin.draw_asset(p, "console_switch_dot_on" if i == idx else "console_switch_dot",
+                                     QRectF(_dx - 4.0, _dy - 4.0, 8.0, 8.0))
+            _t = idx / (n - 1.0) if n > 1 else 0.5
+            self.skin.draw_rotated(
+                p, "console_switch_lever",
+                QRectF(cx - rad, cy - rad, rad * 2, rad * 2),
+                span * (_t - 0.5),
+                fallback=lambda pp: self._paint_switch_lever(pp, cx, cy, rad * 0.68, _t, span))
+            self._paint_console_knob_text(p, r, c, hover)
+            return
+
         for i in range(n):
             t = i / (n - 1.0) if n > 1 else 0.5
             ca, sa = self._knob_dir(t, span)
