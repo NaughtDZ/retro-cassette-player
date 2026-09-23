@@ -276,17 +276,36 @@ def main():
     assert p.console_win.isVisible(), "底座按钮没能呼出 console 面板"
     n_ctrl = len(p.console_win.surface.controls)
     assert n_ctrl >= 18, f"console 控件太少：{n_ctrl}"
-    sw = next(c for c in p.console_win.surface.controls if c.name == "oversampling")
-    before_os = p.engine.tape_params()["oversampling"]
+    sw = next(c for c in p.console_win.surface.controls if c.name == "machine")
+    before_m = p.engine.tape_params()["machine"]
     p.console_win.surface._bump_switch(sw, +1)          # 点一下挡位旋钮
     pump(0.1)
-    assert p.engine.tape_params()["oversampling"] != before_os, \
+    assert p.engine.tape_params()["machine"] != before_m, \
         "console 挡位旋钮的操作没传到 DSP"
+    # OS 现在是**指示灯**而不是可调挡位：core 把倍率钉死在 2×，这里验它随 POWER 亮灭
+    lamp = next(c for c in p.console_win.surface.controls if c.name == "os_lamp")
+    assert p.console_win.surface._hit(QPointF(lamp.rect.center())) is None, \
+        "指示灯不该可交互（会抢面板拖动）"
+
+    def _lamp_lum(power_on):
+        p.engine.set_tape_power(power_on)
+        p.console_win.surface.set_power(power_on)
+        p.console_win.surface.repaint()
+        for _ in range(4):
+            qapp.processEvents()
+        img = p.console_win.surface.grab(lamp.rect).toImage()
+        col = img.pixelColor(lamp.rect.width() // 2, lamp.rect.height() // 2)
+        return col.red() + col.green() + col.blue()
+
+    on_lum, off_lum = _lamp_lum(True), _lamp_lum(False)
+    assert on_lum > off_lum + 80, f"OS 指示灯没随 POWER 变化：亮={on_lum} 灭={off_lum}"
+    print(f"[smoke] OS 指示灯随 POWER 亮灭 OK（亮={on_lum} 灭={off_lum}，且不可交互）")
     p.console_win.surface.param_changed.emit("input_gain_db", 9.0)   # 旋钮走一遍回调链
     pump(0.1)
     assert abs(p.engine.tape_params()["input_gain_db"] - 9.0) < 1e-6, "console 旋钮没传到 DSP"
     p.console_win.grab().save(os.path.join(shots_dir, "10_console.png"))
     print(f"[smoke] console 面板 OK（{n_ctrl} 个控件，挡位/旋钮回调均可抵达 DSP）")
+    p.engine.set_tape_power(True)                        # 复位，后续项依赖引擎在工作
 
     # ---------- 5f-2. 面板空白处必须能拖动窗口（曾因事件不冒泡只能拖 18px 边距） ----------
     surf = p.console_win.surface

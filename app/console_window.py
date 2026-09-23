@@ -49,7 +49,9 @@ ZONES = [
     ("OUTPUT 输出", [
         ("output_gain_db", "GAIN", "knob", "dB"),
         ("auto_comp", "AUTO", "switch", ""),
-        ("oversampling", "OS", "switch", ""),
+        # OS 不是输出级功能，也**不是可调参数**：core 的 factorFromChoice() 硬编码返回 2，
+        # 上游 UI 干脆不给这个控件。这里做成随 POWER 亮灭的指示灯，不再假装它能拧。
+        ("os_lamp", "OS", "lamp", ""),
         ("active", "POWER", "switch", ""),
     ]),
     ("REPRO EQ 重放均衡", [
@@ -202,6 +204,8 @@ class ConsoleSurface(QWidget):
                 p.setOpacity(0.40)                 # 分区关掉 → 该区控件变暗
             if c.kind == "knob":
                 self._paint_knob(p, c)
+            elif c.kind == "lamp":
+                self._paint_lamp(p, c)
             else:
                 self._paint_switch(p, c)
             if off:
@@ -443,9 +447,63 @@ class ConsoleSurface(QWidget):
         p.drawText(QRectF(r.left() - 26, r.bottom() + 10, r.width() + 52, 13),
                    Qt.AlignHCenter | Qt.AlignVCenter, c.value_text(self.values.get(c.name, 0.0)))
 
+    def _paint_lamp(self, p, c: Control):
+        """指示灯：不可调，只反映状态。
+
+        OS 的过采样倍率在 core 里被 factorFromChoice() 钉死在 2×（上游 UI 也不给这个控件），
+        做成一枚随 POWER 亮灭的指示灯，既不再假装它可拧、又能一眼看出引擎在不在跑。
+        """
+        r = QRectF(c.rect)
+        cx, cy = r.center().x(), r.center().y()
+        rad = r.width() / 2.0
+        on = self.total_on
+
+        p.setPen(Qt.NoPen)                                   # 灯座凹槽
+        p.setBrush(QColor(0, 0, 0, 115))
+        p.drawEllipse(QPointF(cx, cy + 1.0), rad * 0.93, rad * 0.93)
+
+        if on:                                               # 点亮时先铺一层光晕
+            glow = QRadialGradient(QPointF(cx, cy), rad * 1.75)
+            glow.setColorAt(0.0, QColor(255, 186, 96, 165))
+            glow.setColorAt(0.55, QColor(255, 156, 64, 60))
+            glow.setColorAt(1.0, QColor(255, 140, 50, 0))
+            p.setBrush(QBrush(glow))
+            p.drawEllipse(QPointF(cx, cy), rad * 1.75, rad * 1.75)
+
+        lit = QColor(255, 176, 72) if on else QColor(92, 86, 74)   # 灯芯玻璃
+        g = QRadialGradient(QPointF(cx - rad * 0.26, cy - rad * 0.30), rad * 1.5)
+        g.setColorAt(0.0, lit.lighter(158))
+        g.setColorAt(0.55, lit)
+        g.setColorAt(1.0, lit.darker(190))
+        p.setBrush(QBrush(g))
+        p.setPen(QPen(self._color("knob_rim", "#6d6656"), 1.3))
+        p.drawEllipse(QPointF(cx, cy), rad * 0.76, rad * 0.76)
+
+        p.setBrush(Qt.NoBrush)                               # 玻璃高光
+        p.setPen(QPen(QColor(255, 255, 255, 70 if on else 28), 1.3))
+        p.drawArc(QRectF(cx - rad * 0.60, cy - rad * 0.64, rad * 1.20, rad * 1.28),
+                  40 * 16, 100 * 16)
+
+        f = QFont()                                          # 标签
+        f.setPointSizeF(7.0)
+        f.setBold(True)
+        p.setFont(f)
+        p.setPen(self._color("console_label", "#cfc4a8"))
+        p.drawText(QRectF(r.left() - 14, r.bottom() - 2, r.width() + 28, 13),
+                   Qt.AlignHCenter | Qt.AlignVCenter, c.label)
+        f2 = QFont("Courier New")                            # 状态：如实写清倍率是固定的
+        f2.setPointSizeF(6.6)
+        f2.setBold(True)
+        p.setFont(f2)
+        p.setPen(QColor(255, 206, 140) if on else QColor(126, 122, 108))
+        p.drawText(QRectF(r.left() - 30, r.bottom() + 10, r.width() + 60, 13),
+                   Qt.AlignHCenter | Qt.AlignVCenter, "2× 固定" if on else "关闭")
+
     # ---------------- 交互 ----------------
     def _hit(self, pos):
         for c in self.controls:
+            if c.kind == "lamp":
+                continue                     # 指示灯不可交互，别抢走面板拖动的点击
             if c.rect.adjusted(-10, -10, 10, 22).contains(pos.toPoint()):
                 return c
         return None
