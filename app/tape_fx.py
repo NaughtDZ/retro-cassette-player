@@ -79,6 +79,20 @@ ENUMS = {
 }
 
 
+OUTPUT_BUFFER_SECONDS = 0.12    # 真实输出缓冲（audio_engine 用）
+# core 的 wow/flutter 深度是按真实磁带标定的：面板拧到 100% 也**只有约 ±0.5% 的速度变化**
+# （实测 1kHz 在 995~1000Hz 之间漂移，约 8 音分），在音乐上基本听不出来。
+# 给一个放大系数，让拧到底时是"明显但不夸张"的抖晃（约 ±1.5%），这是听感取向，不是修 core。
+WOW_FLUTTER_GAIN = 3.0
+
+
+def _harden(name, value):
+    """把面板值转换成真正送给 DSP 的值。"""
+    if name in ("wow", "flutter"):
+        return float(value) * WOW_FLUTTER_GAIN
+    return value
+
+
 # 分区级开关：关掉某个分区 = 把它的参数临时置成"中性值"（记住原值，开回来时恢复）。
 # 这不是 DSP 内的 bypass（core 只有整体 bypass），而是参数域上的等效做法：
 # input 的增益/偏置归零、transport 的抖晃噪声归零、output 的增益补偿归零、重放 EQ 全平。
@@ -197,7 +211,7 @@ class TapeFx:
         if pid is None:
             return
         try:
-            self._dll.dusk_set(self._handle, pid, float(value))
+            self._dll.dusk_set(self._handle, pid, float(_harden(name, value)))
         except Exception:
             pass
 

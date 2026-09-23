@@ -395,7 +395,10 @@ class ConsoleSurface(QWidget):
         hover = self._drag is c or self._hover is c
 
         # 档位刻度点（沿上半圈均匀）
-        span = min(240.0, 40.0 * (n - 1))
+        # 挡位灯必须与旋钮指针用**同一个扇区**（270°）：以前这里用
+        # min(240, 40*(n-1))，2 档时只有 40° 宽，灯的位置和指针完全对不上，
+        # 看上去就像"灯和旋钮反着走"。
+        span = 270.0
         for i in range(n):
             t = i / (n - 1.0) if n > 1 else 0.5
             ca, sa = self._knob_dir(t, span)
