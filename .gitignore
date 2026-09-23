@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.cache/
+config/
+tests/shots/
+tests/_tmp*
+tools/ffmpeg/
+tools/dusk/
+icon.ico
+*.lnk

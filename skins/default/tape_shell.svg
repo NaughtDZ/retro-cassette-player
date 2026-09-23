@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 磁带外壳（默认皮肤）：画布 520x356（对应 layout.tape）
+     透明塑料壳；观察窗处挖穿（不叠膜），因此能清楚看到内部结构。
+     白色贴纸、计数器由程序绘制在上面；窗口区：x 104..416, y 222..318。 -->
+<svg xmlns="http://www.w3.org/2000/svg" width="520" height="356">
+  <!-- 透明塑料外壳（观察窗挖穿） -->
+  <path fill-rule="evenodd" fill="#ffffff" fill-opacity="0.12"
+        stroke="#8aa8b8" stroke-opacity="0.75" stroke-width="2.5"
+        d="M 18 2.5 H 502 A 15.5 15.5 0 0 1 517.5 18 V 338 A 15.5 15.5 0 0 1 502 353.5
+           H 18 A 15.5 15.5 0 0 1 2.5 338 V 18 A 15.5 15.5 0 0 1 18 2.5 Z
+           M 113 231 H 407 A 9 9 0 0 1 416 240 V 300 A 9 9 0 0 1 407 309
+           H 113 A 9 9 0 0 1 104 300 V 240 A 9 9 0 0 1 113 231 Z"/>
+
+  <!-- 内层高光边 -->
+  <rect x="10" y="10" width="500" height="336" rx="13"
+        fill="none" stroke="#ffffff" stroke-opacity="0.34" stroke-width="1.4"/>
+  <!-- 左侧斜向反光（塑料质感） -->
+  <path d="M 26 40 L 26 250 L 52 224 L 52 30 Z" fill="#ffffff" fill-opacity="0.09"/>
+
+  <!-- 窗口金属包边 -->
+  <rect x="101" y="219" width="318" height="102" rx="11" fill="none"
+        stroke="#b9cdd8" stroke-opacity="0.55" stroke-width="1.8"/>
+
+  <!-- 四角螺丝 + 底部中央螺丝 -->
+  <g fill="#a8bcc8" fill-opacity="0.92" stroke="#5f7280" stroke-opacity="0.85" stroke-width="1.2">
+    <circle cx="26" cy="22" r="5"/>
+    <circle cx="494" cy="22" r="5"/>
+    <circle cx="26" cy="334" r="5"/>
+    <circle cx="494" cy="334" r="5"/>
+    <circle cx="260" cy="334" r="5"/>
+  </g>
+  <g stroke="#5f7280" stroke-opacity="0.8" stroke-width="1.4" stroke-linecap="round">
+    <path d="M 22.6 22 H 29.4"/>
+    <path d="M 490.6 22 H 497.4"/>
+    <path d="M 22.6 334 H 29.4"/>
+    <path d="M 490.6 334 H 497.4"/>
+    <path d="M 256.6 334 H 263.4"/>
+  </g>
+
+  <!-- 底部定位槽（磁带机压带机构卡入处） -->
+  <rect x="164" y="350" width="192" height="6" rx="3" fill="#465860" fill-opacity="0.42"/>
+</svg>

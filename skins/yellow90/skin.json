@@ -1,0 +1,18 @@
+{
+  "name": "yellow90",
+  "description": "经典黄黑磁带（不透明外壳样例）：外壳完全遮住内部，只在观察窗里露出卷盘与磁带；按钮等其余部件继承 default",
+  "base_pack": "default",
+  "colors": {
+    "base": "#c9a52c",
+    "base_edge": "#6b5411",
+    "base_lip": "#e9d477",
+    "btn_bg": "#ffcf33",
+    "btn_hover": "#ffdd6b",
+    "lcd_bg": "#171a16",
+    "lcd_fg": "#a6ff8f"
+  },
+  "assets": {
+    "tape_shell": "tape_shell.svg",
+    "base": ""
+  }
+}

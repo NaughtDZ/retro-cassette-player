@@ -1,0 +1,49 @@
+{
+  "name": "default",
+  "description": "内置默认皮肤：蓝色梯形底座 + 黄色控制按钮 + 深藏青磁带壳（样板，可整包复制修改）",
+  "colors": {
+    "bg": "#f2ecdf",
+    "base": "#2a6485",
+    "base_edge": "#173c52",
+    "base_lip": "#4d8db0",
+    "btn_bg": "#ffd23f",
+    "btn_hover": "#ffe06e",
+    "btn_glyph": "#23282e",
+    "chrome_bg": "#1c4a66",
+    "chrome_hover": "#2d6285",
+    "chrome_glyph": "#dfe9f0",
+    "tape_shell": "#20536f",
+    "tape_edge": "#11344a",
+    "tape_screw": "#0e2a3b",
+    "reel_disc": "#f7f2e7",
+    "reel_hub": "#1a4258",
+    "reel_spoke": "#9aa7b1",
+    "text_title": "#2f3742",
+    "text_sub": "#6a7480",
+    "lcd_bg": "#0e1d16",
+    "lcd_fg": "#8dffab"
+  },
+  "layout": {
+    "tape": [220, 96, 520, 356],
+    "base": [76, 468, 808, 132],
+    "btn_prev": [238, 516, 46, 46],
+    "btn_play": [312, 516, 46, 46],
+    "btn_next": [386, 516, 46, 46],
+    "btn_stop": [460, 516, 46, 46],
+    "btn_loop": [560, 516, 46, 46],
+    "win_min": [662, 520, 34, 34],
+    "win_menu": [704, 520, 34, 34],
+    "win_list": [746, 520, 34, 34],
+    "win_close": [788, 520, 34, 34],
+    "knob": [134, 508, 64, 64],
+    "vu_left": [46, 296, 148, 96],
+    "vu_right": [766, 296, 148, 96],
+    "btn_console": [610, 516, 46, 46]
+  },
+  "assets": {
+    "base": "base.svg",
+    "tape_shell": "tape_shell.svg",
+    "tape_inner": "tape_inner.svg",
+    "cover_placeholder": "cover_placeholder.svg"
+  }
+}

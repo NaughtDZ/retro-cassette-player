@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 默认皮肤底座：画布 808x132（对应 layout.base），复古塑料机身
+     纵向分区（画布 y）：0..30 被磁带压住（插带口）→ 34..48 品牌刻字 → 52..108 按钮下沉面板 →
+     119..126 底部阴影。按钮由程序画成塑料键帽，落在下半部凹槽里。
+     控制按钮局部 x 162..530、窗口按钮局部 x 586..746。 -->
+<svg xmlns="http://www.w3.org/2000/svg" width="808" height="132">
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3d7fa6"/>
+      <stop offset="0.34" stop-color="#2f6c8f"/>
+      <stop offset="0.74" stop-color="#26597a"/>
+      <stop offset="1" stop-color="#1b4661"/>
+    </linearGradient>
+    <linearGradient id="slot" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#08151d"/>
+      <stop offset="0.6" stop-color="#16374a"/>
+      <stop offset="1" stop-color="#255067"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#123a51"/>
+      <stop offset="1" stop-color="#2f6b8e"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0" r="0.9">
+      <stop offset="0" stop-color="#7fb6d4" stop-opacity="0.32"/>
+      <stop offset="1" stop-color="#7fb6d4" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- 机身梯形 -->
+  <path d="M 74 2.5 L 734 2.5 L 805.5 129.5 L 2.5 129.5 Z" fill="url(#body)" stroke="#12354a" stroke-width="3"/>
+
+  <!-- 磁带槽腔（比磁带宽一圈，插带后两侧露出暗槽） -->
+  <path d="M 138 0 L 670 0 L 670 15 A 7 7 0 0 1 663 22 L 145 22 A 7 7 0 0 1 138 15 Z"
+        fill="url(#slot)"/>
+  <line x1="146" y1="23.5" x2="662" y2="23.5" stroke="#081019" stroke-width="2.6" opacity="0.6"/>
+  <!-- 槽腔两侧导轨卡扣 -->
+  <g fill="#1b4157" stroke="#0d2a3c" stroke-width="1.4">
+    <rect x="118" y="3" width="16" height="27" rx="4.5"/>
+    <rect x="674" y="3" width="16" height="27" rx="4.5"/>
+  </g>
+
+  <!-- 上缘唇边高光 + 机身顶部环境反光 -->
+  <path d="M 92 12 L 716 12" stroke="#5fa0c4" stroke-width="2.6" stroke-linecap="round"/>
+  <rect x="76" y="2" width="656" height="16" fill="url(#glow)"/>
+
+  <!-- 品牌刻字（磁带下沿与按钮面板之间的窄带） -->
+  <text x="404" y="45" font-family="'Segoe UI','Microsoft YaHei',sans-serif" font-size="10.5"
+        text-anchor="middle" fill="#8dbdd6" opacity="0.92">R E T R O   D E C K</text>
+
+  <!-- 控制按钮下沉面板 -->
+  <rect x="156" y="52" width="382" height="56" rx="12" fill="url(#panel)" opacity="0.78"/>
+  <rect x="156" y="52" width="382" height="56" rx="12" fill="none" stroke="#0d2a3c" stroke-width="1.6"/>
+  <rect x="158" y="54" width="378" height="52" rx="11" fill="none" stroke="#5590b3" stroke-width="1" opacity="0.3"/>
+
+  <!-- 窗口按钮下沉面板 -->
+  <rect x="578" y="54" width="180" height="52" rx="10" fill="url(#panel)" opacity="0.66"/>
+  <rect x="578" y="54" width="180" height="52" rx="10" fill="none" stroke="#0d2a3c" stroke-width="1.4"/>
+
+  <!-- 左侧留给音量旋钮（由程序绘制），这里只保留右侧扬声器网孔 -->
+  <g fill="#123a51" opacity="0.9">
+    <circle cx="624" cy="112" r="2.4"/><circle cx="638" cy="112" r="2.4"/><circle cx="652" cy="112" r="2.4"/>
+    <circle cx="666" cy="112" r="2.4"/><circle cx="680" cy="112" r="2.4"/><circle cx="694" cy="112" r="2.4"/>
+    <circle cx="708" cy="112" r="2.4"/><circle cx="722" cy="112" r="2.4"/>
+    <circle cx="624" cy="122" r="2.4"/><circle cx="638" cy="122" r="2.4"/><circle cx="652" cy="122" r="2.4"/>
+    <circle cx="666" cy="122" r="2.4"/><circle cx="680" cy="122" r="2.4"/><circle cx="694" cy="122" r="2.4"/>
+    <circle cx="708" cy="122" r="2.4"/><circle cx="722" cy="122" r="2.4"/>
+  </g>
+
+  <!-- 底部阴影条 -->
+  <rect x="37" y="118" width="734" height="6" rx="3" fill="#0d2536" opacity="0.55"/>
+</svg>

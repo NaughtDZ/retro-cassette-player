@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 磁带内部结构：画布 520x356，与 tape_shell 同坐标系（局部坐标 +260/+178）
+     只画静态部分：观察窗承座、卷盘凹槽、导带柱、窗底轨道、加强筋。
+     磁带卷大小与齿轮盘旋转由程序绘制在上面，所以换内部贴图不会丢动画。
+     窗口区：x 104..416, y 222..318（对应程序 WINDOW_RECT） -->
+<svg xmlns="http://www.w3.org/2000/svg" width="520" height="356">
+  <defs>
+    <linearGradient id="innerg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3a434b"/>
+      <stop offset="0.45" stop-color="#252c33"/>
+      <stop offset="1" stop-color="#1b2127"/>
+    </linearGradient>
+    <radialGradient id="seat" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0.6" stop-color="#151a1f"/>
+      <stop offset="1" stop-color="#232b32"/>
+    </radialGradient>
+  </defs>
+
+  <!-- 观察窗暗色承座（不透明，保证透明外壳下依然清晰） -->
+  <rect x="104" y="222" width="312" height="96" rx="9" fill="#1a2026" stroke="#4a5661" stroke-width="1.6"/>
+  <rect x="108" y="226" width="304" height="40" rx="7" fill="url(#innerg)" opacity="0.75"/>
+
+  <!-- 左右卷盘凹槽（齿轮盘就落在这些凹槽里） -->
+  <circle cx="148" cy="270" r="62" fill="url(#seat)"/>
+  <circle cx="372" cy="270" r="62" fill="url(#seat)"/>
+
+  <!-- 左右导带柱 -->
+  <circle cx="120" cy="262" r="5.5" fill="#5b6a74"/>
+  <circle cx="400" cy="262" r="5.5" fill="#5b6a74"/>
+
+  <!-- 内部加强筋（壳体结构感） -->
+  <g stroke="#39434b" stroke-width="1.4" opacity="0.75" fill="none">
+    <path d="M 120 232 H 400"/>
+    <path d="M 228 228 V 312"/>
+    <path d="M 292 228 V 312"/>
+  </g>
+</svg>

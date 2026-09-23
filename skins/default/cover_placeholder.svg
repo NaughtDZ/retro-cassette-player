@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 占位封面：画布 132x132（磁带中心偏上 132px 方区） -->
+<svg xmlns="http://www.w3.org/2000/svg" width="132" height="132">
+  <rect x="1" y="1" width="130" height="130" rx="8" fill="#efe6d4" stroke="#11344a" stroke-width="2"/>
+
+  <!-- 蓝/棕双条纹（模拟磁带标签色条） -->
+  <rect x="10" y="34" width="112" height="7" fill="#2a6485"/>
+  <rect x="10" y="46" width="112" height="7" fill="#c25e3d"/>
+
+  <!-- 八分音符 -->
+  <g fill="#5a5245">
+    <ellipse cx="59" cy="97" rx="7.5" ry="6" transform="rotate(-18 59 97)"/>
+    <rect x="64.6" y="66" width="3.4" height="30"/>
+    <path d="M 68 66 Q 80 70 78 82 Q 76 75 68 73 Z"/>
+  </g>
+
+  <text x="66" y="119" font-family="'Segoe UI',sans-serif" font-size="8" text-anchor="middle" fill="#8a7f6d">N O   C O V E R</text>
+</svg>
