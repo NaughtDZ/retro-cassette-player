@@ -56,7 +56,7 @@ class PlayerApp:
         self.deck_win = ShadowWindow(margin=18, blur=30)
         self.deck_win.add_content(deck_content)
         self.deck = deck_content
-        self.pl_win = PlaylistWindow()
+        self.pl_win = PlaylistWindow(self._make_skin())
         # 磁带 console 悬浮窗：按底座按钮呼出（默认隐藏）
         self.console_win = ConsoleWindow(self.deck.skin, self.engine.tape_params())
         self.console_win.param_changed.connect(self.on_console_param)
@@ -301,6 +301,7 @@ class PlayerApp:
         self.skin_name = name
         self.deck.set_skin(Skin(name, os.path.join(self.root, "skins", name)))
         self.console_win.set_skin(self.deck.skin)          # console 面板跟着换皮
+        self.pl_win.paper.set_skin(self.deck.skin)         # 播放列表也跟着换皮
 
     # ---------------- 磁带 console ----------------
     def on_console_param(self, name, value):

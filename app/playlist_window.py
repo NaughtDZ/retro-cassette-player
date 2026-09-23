@@ -2,7 +2,7 @@
 
 对应参考图二：横向蓝色格线、纵向分栏、左侧双红线、行号 "1."，当前曲目用黄色荧光笔高亮。
 """
-from PySide6.QtCore import Qt, QRect, QPointF, Signal
+from PySide6.QtCore import Qt, QRect, QRectF, QPointF, Signal
 from PySide6.QtGui import QPainter, QColor, QPen, QFont, QPainterPath
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QScrollArea
 
@@ -30,8 +30,9 @@ class HeaderBar(QWidget):
     """纸面顶部：标题（荧光笔高亮）+ 曲目数 + 关闭按钮；按住可拖动窗口。"""
     close_clicked = Signal()
 
-    def __init__(self, parent=None):
+    def __init__(self, skin=None, parent=None):
         super().__init__(parent)
+        self.skin = skin
         self.setFixedHeight(46)
         self.count_text = ""
         self._drag_off = None
@@ -48,7 +49,11 @@ class HeaderBar(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
         w, h = self.width(), self.height()
-        p.fillRect(0, 0, w, h, QColor(PAPER_BG))
+        # v1.1.0：顶栏底可换成 playlist_header（拉伸无损）；标题、荧光笔底衬与计数仍是程序绘制
+        if self.skin is not None and self.skin.has_asset("playlist_header"):
+            self.skin.draw_asset(p, "playlist_header", QRectF(0, 0, w, h))
+        else:
+            p.fillRect(0, 0, w, h, QColor(PAPER_BG))
         # 标题 + 荧光笔
         f = hand_font(15.5, bold=True)
         p.setFont(f)
@@ -98,8 +103,9 @@ class SheetWidget(QWidget):
     NUM_COL = 56          # 行号列宽
     DUR_COL = 92          # 时长列宽（右侧）
 
-    def __init__(self, parent=None):
+    def __init__(self, skin=None, parent=None):
         super().__init__(parent)
+        self.skin = skin
         self.rows: list = []
         self.current = -1
         self.setMinimumWidth(470)
@@ -140,7 +146,13 @@ class SheetWidget(QWidget):
         last = min(len(self.rows), clip.bottom() // row_h + 2)
         bottom_y = min(self.height(), (last + 1) * row_h)
 
-        p.fillRect(clip, QColor(PAPER_BG))
+        # v1.1.0：纸底可换成 playlist_paper（纯色/纹理，拉伸无损）。横格线、分栏线与
+        # 左侧页边线仍由程序绘制——它们的条数随行数和窗口尺寸变化，资源化没有意义。
+        s = self.skin
+        if s is not None and s.has_asset("playlist_paper"):
+            s.draw_asset(p, "playlist_paper", QRectF(0, 0, w, self.height()))
+        else:
+            p.fillRect(clip, QColor(PAPER_BG))
 
         # 横向格线（限定可见范围）
         p.setPen(QPen(GRID_LINE, 1.2))
@@ -175,23 +187,30 @@ class SheetWidget(QWidget):
             t = self.rows[i]
             y = i * row_h
             if i == self.current:
-                p.setPen(Qt.NoPen)
-                p.setBrush(MARK_YELLOW)
-                p.drawRect(26, y + 3, w - 30, row_h - 6)   # 荧光笔高亮当前行
+                mark = QRectF(26, y + 3, w - 30, row_h - 6)
+                if s is not None and s.has_asset("playlist_mark"):
+                    s.draw_asset(p, "playlist_mark", mark)         # 荧光笔高亮（可换图）
+                else:
+                    p.setPen(Qt.NoPen)
+                    p.setBrush(MARK_YELLOW)
+                    p.drawRect(26, y + 3, w - 30, row_h - 6)      # 荧光笔高亮当前行
             p.setFont(f_num)
             p.setPen(QColor("#d43c31") if i == self.current else TEXT_MAIN)
             num = f"{i + 1}."
             p.drawText(QRect(0, y, x_num - 6, row_h), Qt.AlignRight | Qt.AlignVCenter, num)
             if i == self.current:      # 红色小三角标记
                 tri = QRect(x_num - 14, y + row_h // 2 - 5, 9, 10)
-                path = QPainterPath()
-                path.moveTo(tri.left(), tri.top())
-                path.lineTo(tri.right(), tri.center().y())
-                path.lineTo(tri.left(), tri.bottom())
-                path.closeSubpath()
-                p.setPen(Qt.NoPen)
-                p.setBrush(QColor("#d43c31"))
-                p.drawPath(path)
+                if s is not None and s.has_asset("playlist_caret"):
+                    s.draw_asset(p, "playlist_caret", QRectF(tri))
+                else:
+                    path = QPainterPath()
+                    path.moveTo(tri.left(), tri.top())
+                    path.lineTo(tri.right(), tri.center().y())
+                    path.lineTo(tri.left(), tri.bottom())
+                    path.closeSubpath()
+                    p.setPen(Qt.NoPen)
+                    p.setBrush(QColor("#d43c31"))
+                    p.drawPath(path)
             title = t.title or "（未知标题）"
             fm = p.fontMetrics()
             shown = fm.elidedText(title, Qt.ElideRight, tw_max) if \
@@ -213,14 +232,15 @@ class SheetWidget(QWidget):
 class PaperWidget(QWidget):
     """纸面容器：标题栏 + 可滚动的练习册。"""
 
-    def __init__(self, parent=None):
+    def __init__(self, skin=None, parent=None):
         super().__init__(parent)
+        self.skin = skin
         self.setFixedSize(470, 560)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
-        self.header = HeaderBar()
-        self.sheet = SheetWidget()
+        self.header = HeaderBar(skin)
+        self.sheet = SheetWidget(skin)
         scroll = QScrollArea()
         scroll.setFrameShape(QScrollArea.NoFrame)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -241,16 +261,25 @@ class PaperWidget(QWidget):
     def set_current(self, current):
         self.sheet.set_current(current)
 
+    def set_skin(self, skin):
+        """换肤：纸底/顶栏/高亮的资源键都由 skin 决定，改完重绘两个子件。"""
+        self.skin = skin
+        self.header.skin = skin
+        self.sheet.skin = skin
+        self.header.update()
+        self.sheet.update()
+
 
 class PlaylistWindow(ShadowWindow):
     """独立悬浮播放列表窗口（默认置顶）。"""
     play_requested = Signal(int)
 
-    def __init__(self, parent=None):
+    def __init__(self, skin=None, parent=None):
         super().__init__(margin=18, blur=30)
+        self.skin = skin
         self.setWindowTitle("播放列表")
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.Window | Qt.WindowStaysOnTopHint)
-        self.paper = PaperWidget()
+        self.paper = PaperWidget(skin)
         self.add_content(self.paper)
         self.paper.sheet.play_requested.connect(self.play_requested)
         self.paper.header.close_clicked.connect(self.hide)
