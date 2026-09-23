@@ -58,7 +58,7 @@ def main():
     eng = p.engine
     sink = eng._sink
     if sink is None:
-        print("[line] 没有真实音频设备（engine._sink 为 None）→ 无法观测欠载")
+        print("[line] 没有真实音频设备（engine._sink 为 None）→ 无法观测")
         return 0
 
     sink.setVolume(0.0)                     # 静音：链路照跑，声音不进耳机
@@ -77,19 +77,22 @@ def main():
         p.model.apply_meta(t.path, {"artist": "YG", "album": "A", "duration": 8.0})
     p._play_index(0)
 
-    # 每 10ms 采样一次，观察投递周期与 buffer 余量
+    # 每 10ms 采样一次；★ 关键指标是"设备实际消费了多少音频"（processedUSecs），
+    # 这才是"有没有声音"的客观证据。bytesFree / stateChanged 都证明不了这一点。
     samples = []
     starve = []
     t0 = time.time()
     stall_at = t0 + 2.5
     stalled = False
+    us_start = None
     while time.time() - t0 < 6.0:
         qapp.processEvents()
+        if us_start is None:
+            us_start = sink.processedUSecs()
         free = sink.bytesFree()
         samples.append(free)
         if free == 0:
             starve.append(time.time() - t0)
-        # 2.5s 时制造一次 GUI 卡顿（模拟"打开 console 面板"那种首次渲染）
         if not stalled and time.time() > stall_at:
             stalled = True
             t_stall = time.monotonic()
@@ -99,18 +102,22 @@ def main():
             print(f"[line] 已人为卡顿 {(time.monotonic() - t_stall) * 1000:.0f} ms（模拟打开面板）")
         time.sleep(0.01)
 
-    leak = p.engine.tape_fx.available and p.engine.tape_fx._glitches
-    idle = [t for st, t in events if st == QAudio.State.IdleState]
+    played = (sink.processedUSecs() - us_start) / 1e6
+    reads = eng._source.reads if eng._source is not None else 0
+    # 注意：QAudio.State 枚举在 PySide6 里 == 比较不可靠，比 value
+    idle = [t for st, t in events if int(getattr(st, "value", -1)) == int(QAudio.State.IdleState.value)]
+    print(f"[line] ★ 设备实际播放时长 = {played:.2f}s（<=0 就等于没有声音）")
+    print(f"[line] 源被拉取次数 = {reads}；pull 模式 = {eng._pull}")
     print(f"[line] sink 状态切换次数：{len(events)}；其中 Idle（缓冲被抽空/欠载）{len(idle)}")
-    print(f"[line] bytesFree==0 的采样数：{len(starve)}/{len(samples)}"
-          f"{'（首次在 %.2fs）' % starve[0] if starve else ''}")
-    print(f"[line] 播放中 playing={eng.playing}，DSP 输出异常次数={leak}")
+    print(f"[line] bytesFree==0 的采样数：{len(starve)}/{len(samples)}")
+    print(f"[line] 播放中 playing={eng.playing}，DSP 输出异常次数={eng.tape_fx._glitches}")
 
     p.engine.stop()
     p._shutdown_workers()
     qapp.quit()
-    print("DIAG_LINE_DONE")
-    return 0
+    print("DIAG_LINE_PASS" if played > 2.0 and reads > 0 else
+          f"DIAG_LINE_FAIL: played={played:.2f}s reads={reads} pull={eng._pull}")
+    return 0 if (played > 2.0 and reads > 0) else 1
 
 
 if __name__ == "__main__":

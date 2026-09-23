@@ -30,6 +30,23 @@ LOOKAHEAD_SECONDS = 0.12        # 虚拟实时模式下的额外前瞻
 OUTPUT_BUFFER_SECONDS = 0.12    # 真实输出设备缓冲：低到不影响手感，又留出抗抖动余量
 SIGNAL_PATH_THRU = 3.0          # signal_path 的 Thru 档：core 在此档直接 return input
 
+# ★ PySide6 的 QAudio.State 枚举实例之间用 == / is 比较**不可靠**：同一个状态取两次会得到
+# 不同实例、判为不相等（实测 kind="StoppedState"、value 都是 2，`==` 却返回 False）。
+# 一旦用它判断，逻辑会整体走反（设备永远不被 start → 播放彻底没声音）。全部改比 value。
+_AUDIO_ACTIVE = int(QAudio.State.ActiveState.value)
+_AUDIO_IDLE = int(QAudio.State.IdleState.value)
+_AUDIO_STOPPED = int(QAudio.State.StoppedState.value)
+_AUDIO_SUSPENDED = int(QAudio.State.SuspendedState.value)
+
+
+def _sink_state_code(sink) -> int:
+    """QAudioSink 当前状态的状态码；取不到返回 -1。比较一律用这个，不要用枚举相等。"""
+    try:
+        st = sink.state()
+    except Exception:
+        return -1
+    return int(getattr(st, "value", st))
+
 
 def find_ffmpeg(explicit_dir=None):
     """定位 ffmpeg/ffprobe。优先项目 tools\\ffmpeg，其次系统 PATH。"""
@@ -68,6 +85,10 @@ class PcmSource(QIODevice):
     def __init__(self, engine):
         super().__init__()
         self._eng = engine
+        self.reads = 0                      # 诊断用：被设备拉取的次数
+        # ★ pull 模式的前提：QAudioSink.start(device) 要求源设备已经以只读方式打开。
+        # 忘了这一句，设备就永远不来读——表现是"播放进度在走、但一点声音都没有"。
+        self.open(QIODevice.OpenModeFlag.ReadOnly)
 
     def isSequential(self):
         return True
@@ -82,6 +103,7 @@ class PcmSource(QIODevice):
         need = int(maxlen)
         if need <= 0:
             return bytes(0)
+        self.reads += 1
         with eng._lock:
             out = bytearray()
             while len(out) < need and eng._buf:
@@ -96,8 +118,6 @@ class PcmSource(QIODevice):
             if out:
                 eng._consumed += len(out)          # 位置以真正交给设备的字节为准
         if not out:
-            if eng._eof_pending:
-                eng._drained = True                # 解码结束且缓冲抽干：交给 _feed 收尾
             return bytes(0)
         return bytes(eng._apply_tape_fx(out))
 
@@ -245,16 +265,20 @@ class AudioEngine(QObject):
 
     # ---------------- 音频输出（pull 模式：Qt 音频线程主动来拉数据） ----------------
     def _restart_sink(self):
-        """(重)启音频输出，让设备从我们的 PcmSource 拉数据；失败时降级为虚拟实时。"""
+        """(重)启音频输出，让设备从我们的 PcmSource 拉数据。
+
+        ★ 只在设备**确实处于 Stopped** 时才 start。旧写法"状态不是 Active 就先 stop 再 start"
+        会因为状态切换本身需要时间而每次 tick 都重启一次，抖动成死循环：设备反复 start，
+        processedUSecs 每次归零，听感就是完全没声音（实测状态切换 199 次、实际播放 0.06 秒）。
+        Active / Idle / Suspended 都表示设备在工作，一概不要去折腾它。
+        """
         self._device = None
-        self._sink_failed = False
         if self._sink is None:
             return
         try:
-            if self._pull and self._sink.state() == QAudio.State.ActiveState:
-                return                      # 已在拉：沿用，避免重复 start 警告
-            if self._sink.state() != QAudio.State.StoppedState:
-                self._sink.stop()
+            if _sink_state_code(self._sink) != _AUDIO_STOPPED:
+                self._pull = True            # 已在工作：沿用现有设备，别 stop/start
+                return
             if self._source is None:
                 self._source = PcmSource(self)
             try:
@@ -286,16 +310,32 @@ class AudioEngine(QObject):
         self.volume_changed.emit(v)
 
     def _ensure_device(self):
-        """确保输出在跑（懒启动；设备故障后不再反复重试）。返回 True 表示设备在拉数据。"""
+        """返回 True 表示设备正在拉数据（此时 _feed 绝不能再自己消耗缓冲）。
+
+        两个坑都在这里：
+        - ★ 缓冲为空时**不能** start：pull 模式下 Qt 第一次查询拿不到数据就停止拉取，
+          结果是"进度在走、一点声音都没有"（实测 readData 调用 0 次、设备播放 0.00 秒）。
+          所以必须有数据才启动设备。
+        - 判据不用 sink.error()：偶发一次 UnderrunError 不代表设备坏了，用 error() 判死
+          会让 _feed 误以为"没有设备"，转而自己消耗缓冲，把音频提前吃光（断音）。
+        """
         if self._sink is None or self._sink_failed:
             return False
+        code = _sink_state_code(self._sink)
+        if code < 0:
+            return False
+        if code == _AUDIO_ACTIVE:
+            self._pull = True
+            return True
+        if code == _AUDIO_IDLE and self._source is not None and self._source.reads > 0:
+            self._pull = True              # 只是暂时供不上数据，设备本身在工作
+            return True
+        with self._lock:
+            has_data = bool(self._buf)
+        if not has_data:
+            return False
         try:
-            if self._sink.error() != QAudio.Error.NoError:
-                self._sink_failed = True
-                self._pull = False
-                return False
-            if not self._pull or self._sink.state() == QAudio.State.StoppedState:
-                self._restart_sink()
+            self._restart_sink()
         except Exception as e:
             print(f"[audio] sink 启动失败：{e}")
             self._sink_failed = True
@@ -361,11 +401,12 @@ class AudioEngine(QObject):
     def _check_eof(self):
         if not (self.path and self.playing):
             return
-        if not (self._drained or self._eof_pending):
-            return
         with self._lock:
             drained = not self._buf
-        if drained:
+        if drained and self._eof_pending:
+            if self._pull and (self._source is not None
+                               and self._source.bytesAvailable() > 0):
+                return                          # 设备还没把缓冲抽完
             self._drained = False
             self.playing = False
             self.playing_changed.emit(False)
@@ -422,13 +463,17 @@ class AudioEngine(QObject):
         return self._failed
 
     def load(self, path, start_playing=True, offset=0.0):
-        """加载新曲目（重启解码进程）。"""
+        """加载新曲目（重启解码进程）。
+
+        设备**不在这里启动**：此时缓冲必然是空的，pull 模式下 Qt 拿不到数据就会停止拉取。
+        交给 ``_feed`` 等缓冲有数据后再启动。
+        """
         self._close_proc()
         self.path = str(path)
-        self._restart_sink()
         self._spawn(self.path, offset)
         self.playing = bool(start_playing and self._proc is not None)
         self._feed_timer.start()
+        self._feed()
         self.position_changed.emit(offset)
         self.playing_changed.emit(self.playing)
 
@@ -476,7 +521,7 @@ class AudioEngine(QObject):
             self._consumed = 0
         self.playing = False
         try:
-            if self._sink is not None and self._sink.state() == QAudio.State.ActiveState:
+            if self._sink is not None and _sink_state_code(self._sink) != _AUDIO_STOPPED:
                 self._sink.stop()
             self._device = None
         except Exception:
