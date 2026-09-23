@@ -28,8 +28,8 @@ class DeckWidget(QWidget):
     CHROME_KEYS = ("win_min", "win_menu", "win_list", "win_close")
 
     # ---------------- 磁带内部几何（相对磁带中心，单位 px，对应 layout.tape 520x356） ----------------
-    COVER_SIZE = 124
-    COVER_CY = -84
+    COVER_SIZE = 118
+    COVER_CY = -88
     LABEL_RECT = QRectF(-234, -152, 468, 190)      # 白色标签纸
     WINDOW_RECT = QRectF(-156, 44, 312, 96)        # 中间观察窗（能看到两个齿轮盘）
     HUB_X = 112                                    # 齿轮盘中心 x（±），约等于实物磁带轮距比例
@@ -712,6 +712,8 @@ class DeckWidget(QWidget):
         p.drawRoundedRect(cr.adjusted(-3, -3, 3, 3), 10, 10)
 
         # 标题 / 副标题（写在标签纸上）
+        # 注意：15.5pt 粗体的中文实际排版高度约 24px，用 20px 的矩形配 AlignBottom 会
+        # 向上溢出、顶进封面下缘（表现为"标题的头顶被封面切掉"）。改用略高的矩形 + 垂直居中。
         fm = QFont()
         fm.setPointSizeF(15.5)
         fm.setBold(True)
@@ -719,14 +721,14 @@ class DeckWidget(QWidget):
         p.setPen(s.color("text_title"))
         title_w = self.fontMetrics().horizontalAdvance(self.title_text)
         shown = self.fontMetrics().elidedText(self.title_text, Qt.ElideRight, 420) if title_w > 420 else self.title_text
-        p.drawText(QRectF(-210, -8, 420, 20), Qt.AlignHCenter | Qt.AlignBottom, shown)
+        p.drawText(QRectF(-210, -28, 420, 26), Qt.AlignHCenter | Qt.AlignVCenter, shown)
         f2 = QFont()
         f2.setPointSizeF(11.0)
         p.setFont(f2)
         p.setPen(s.color("text_sub"))
         sub_w = self.fontMetrics().horizontalAdvance(self.sub_text)
         shown_sub = self.fontMetrics().elidedText(self.sub_text, Qt.ElideRight, 430) if sub_w > 430 else self.sub_text
-        p.drawText(QRectF(-210, 10, 420, 18), Qt.AlignHCenter | Qt.AlignBottom, shown_sub)
+        p.drawText(QRectF(-210, 0, 420, 20), Qt.AlignHCenter | Qt.AlignVCenter, shown_sub)
 
     def _paint_inner(self, p, a):
         """磁带内部结构：观察窗承座 + 两个磁带卷 + 旋转齿轮盘。
