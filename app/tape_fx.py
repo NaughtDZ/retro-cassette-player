@@ -80,16 +80,24 @@ ENUMS = {
 
 
 OUTPUT_BUFFER_SECONDS = 0.12    # 真实输出缓冲（audio_engine 用）
-# core 的 wow/flutter 深度是按真实磁带标定的：面板拧到 100% 也**只有约 ±0.5% 的速度变化**
-# （实测 1kHz 在 995~1000Hz 之间漂移，约 8 音分），在音乐上基本听不出来。
-# 给一个放大系数，让拧到底时是"明显但不夸张"的抖晃（约 ±1.5%），这是听感取向，不是修 core。
-WOW_FLUTTER_GAIN = 3.0
+# wow / flutter 的面板值 → 送给 core 的调制量。
+# core 的标定写实（100 ≈ 8 音分，正常卡带量级），线性放大既不够用、手感也差。
+# 改用指数曲线：前半程细腻（50% ≈ 17 音分），后半程急剧展开（100% ≈ 100 音分，一个半音），
+# 这样低段能微调"轻微走带不稳"，高段能做出明显的变速漂移。
+#   depth(v) = (v/100)^CURVE × MAX_SCALE × 100        （core 的 wow 量是 0..100 的百分数）
+# core 的延迟缓冲有 9600 samples 余量（baseDelay 仅 80），放大到 12 倍以上也不会越界；
+# 它的 read 指针本来就有 clamp（totalDelay ∈ [2.5, bufferSize-3]），最坏也只是削顶。
+WOW_FLUTTER_MAX_SCALE = 27.9    # v=100 时的等效倍率（实测标定：≈100 音分＝一个半音）
+WOW_FLUTTER_CURVE = 2.56        # 指数：实测标定 v=50 ≈ 17 音分、v=75 ≈ 43、v=90 ≈ 74
 
 
 def _harden(name, value):
     """把面板值转换成真正送给 DSP 的值。"""
     if name in ("wow", "flutter"):
-        return float(value) * WOW_FLUTTER_GAIN
+        v = max(0.0, min(100.0, float(value)))
+        if v <= 0.0:
+            return 0.0                      # 0 必须严格为 0：core 在 0 时是 bit-clean 的
+        return (v / 100.0) ** WOW_FLUTTER_CURVE * WOW_FLUTTER_MAX_SCALE * 100.0
     return value
 
 
