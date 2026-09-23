@@ -589,6 +589,15 @@ class DeckWidget(QWidget):
         # 注意：刻度环"已过音量亮起"是动态效果，换成静态底图后不再有，这是资源化的取舍。
         if s.has_asset("knob_vol"):
             s.draw_asset(p, "knob_vol", QRectF(r))
+            # 刻度逐道亮起：底图里是暗刻度，这里把"单道亮刻度"按角度叠在已拧过的位置上。
+            # 这样这个动态效果也能换皮（不提供 knob_vol_lit 就没有亮刻度）。
+            if s.has_asset("knob_vol_lit"):
+                lit_rect = QRectF(cx - ring, cy - ring, ring * 2, ring * 2)
+                for i in range(11):
+                    frac = i / 10.0
+                    if frac > self.volume + 1e-6:
+                        break
+                    s.draw_rotated(p, "knob_vol_lit", lit_rect, -span / 2.0 + span * frac)
             s.draw_rotated(p, "knob_vol_pointer",
                            QRectF(cx - ring, cy - ring, ring * 2, ring * 2),
                            -span / 2.0 + span * self.volume,

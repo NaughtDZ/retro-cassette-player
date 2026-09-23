@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- 单道亮刻度，画在正上方；程序按角度逐道旋转叠加 -->
+  <line x1="32.00" y1="7.00" x2="32.00" y2="1.50" stroke="#7fc4e6" stroke-width="2.4" stroke-linecap="round"/>
+  <line x1="32.00" y1="7.00" x2="32.00" y2="1.50" stroke="#ffffff" stroke-width="1.1" stroke-linecap="round" opacity="0.55"/>
+</svg>

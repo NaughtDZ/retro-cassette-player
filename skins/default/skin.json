@@ -137,6 +137,7 @@
     "vu_dial": "vu_dial.svg",
     "vu_needle": "vu_needle.svg",
     "knob_vol": "knob_vol.svg",
-    "knob_vol_pointer": "knob_vol_pointer.svg"
+    "knob_vol_pointer": "knob_vol_pointer.svg",
+    "knob_vol_lit": "knob_vol_lit.svg"
   }
 }
