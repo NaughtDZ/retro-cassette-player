@@ -277,14 +277,18 @@ class ConsoleSurface(QWidget):
 
     def _paint_zone(self, p, name, y, zi):
         zr = QRectF(MARGIN, y, SURFACE_W - MARGIN * 2, ZONE_H)
-        p.setPen(Qt.NoPen)
-        p.setBrush(self._color("console_zone", "#3a3934"))
-        p.drawRoundedRect(zr, 9, 9)
-        p.setPen(QPen(QColor(0, 0, 0, 90), 1.3))
-        p.setBrush(Qt.NoBrush)
-        p.drawRoundedRect(zr.adjusted(1.2, 1.2, -1.2, -1.2), 8, 8)
-        p.setPen(QPen(self._color("console_zone_line", "#55534c"), 1.0))
-        p.drawLine(QPointF(zr.left() + 8, zr.top() + 17), QPointF(zr.right() - 8, zr.top() + 17))
+        # v1.1.0：分区凹槽（圆角底 + 内描边 + 标题分隔线）可整张换成 console_zone 资源
+        if self.skin.has_asset("console_zone"):
+            self.skin.draw_asset(p, "console_zone", zr)
+        else:
+            p.setPen(Qt.NoPen)
+            p.setBrush(self._color("console_zone", "#3a3934"))
+            p.drawRoundedRect(zr, 9, 9)
+            p.setPen(QPen(QColor(0, 0, 0, 90), 1.3))
+            p.setBrush(Qt.NoBrush)
+            p.drawRoundedRect(zr.adjusted(1.2, 1.2, -1.2, -1.2), 8, 8)
+            p.setPen(QPen(self._color("console_zone_line", "#55534c"), 1.0))
+            p.drawLine(QPointF(zr.left() + 8, zr.top() + 17), QPointF(zr.right() - 8, zr.top() + 17))
         f = QFont()
         f.setPointSizeF(7.6)
         f.setBold(True)
@@ -323,6 +327,27 @@ class ConsoleSurface(QWidget):
             frac = max(0.0, min(1.0, (self.values.get(c.name, c.lo) - c.lo) / (c.hi - c.lo)))
         span = 270.0
         drag_or_hover = self._drag is c or self._hover is c
+
+        # v1.1.0：刻度环 + 凹坑 + 键帽 + 滚花可整张换成 console_knob 资源；
+        # 刻度"已拧过亮起"用 console_knob_lit（单道亮刻度）逐道叠加，指针可用
+        # console_knob_pointer 换图。标签与数值始终由程序绘制。
+        if self.skin.has_asset("console_knob"):
+            kcap = rad * 0.72
+            self.skin.draw_asset(p, "console_knob", QRectF(r))
+            if self.skin.has_asset("console_knob_lit"):
+                lit_rect = QRectF(cx - rad, cy - rad, rad * 2, rad * 2)
+                for i in range(11):
+                    t = i / 10.0
+                    if t > frac + 1e-6:
+                        break
+                    self.skin.draw_rotated(p, "console_knob_lit", lit_rect, span * (t - 0.5))
+            self.skin.draw_rotated(
+                p, "console_knob_pointer",
+                QRectF(cx - rad, cy - rad, rad * 2, rad * 2),
+                span * (frac - 0.5),
+                fallback=lambda pp: self._paint_console_knob_pointer(pp, cx, cy, kcap, frac, span))
+            self._paint_console_knob_text(p, r, c, drag_or_hover)
+            return
 
         # 刻度环
         for i in range(11):
@@ -365,6 +390,30 @@ class ConsoleSurface(QWidget):
                    QPointF(cx + ca * cap * 0.86, cy + sa * cap * 0.86))
 
         # 标签与数值
+        f = QFont()
+        f.setPointSizeF(7.0)
+        f.setBold(True)
+        p.setFont(f)
+        p.setPen(self._color("console_label", "#cfc4a8"))
+        p.drawText(QRectF(r.left() - 14, r.bottom() - 2, r.width() + 28, 13),
+                   Qt.AlignHCenter | Qt.AlignVCenter, c.label)
+        f2 = QFont("Courier New")
+        f2.setPointSizeF(7.0)
+        f2.setBold(True)
+        p.setFont(f2)
+        p.setPen(QColor(255, 226, 150) if drag_or_hover else QColor(150, 148, 132))
+        p.drawText(QRectF(r.left() - 20, r.bottom() + 10, r.width() + 40, 13),
+                   Qt.AlignHCenter | Qt.AlignVCenter, c.value_text(self.values.get(c.name, c.lo)))
+
+    def _paint_console_knob_pointer(self, p, cx, cy, cap, frac, span):
+        """程序画 console 旋钮指针（无 console_knob_pointer 资源时用）。"""
+        ca, sa = self._knob_dir(frac, span)
+        p.setPen(QPen(self._color("knob_mark", "#241d14"), 2.0, Qt.SolidLine, Qt.RoundCap))
+        p.drawLine(QPointF(cx + ca * cap * 0.12, cy + sa * cap * 0.12),
+                   QPointF(cx + ca * cap * 0.86, cy + sa * cap * 0.86))
+
+    def _paint_console_knob_text(self, p, r, c: Control, drag_or_hover):
+        """旋钮下方的标签与数值（资源化后仍由程序绘制）。"""
         f = QFont()
         f.setPointSizeF(7.0)
         f.setBold(True)

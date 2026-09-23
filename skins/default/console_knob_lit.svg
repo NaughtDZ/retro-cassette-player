@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="52" height="52" viewBox="0 0 52 52">
+  <!-- 单道"已拧过"的亮刻度，画在正上方；程序按角度逐道叠加 -->
+  <line x1="26.00" y1="5.00" x2="26.00" y2="0.50" stroke="#d8c79a" stroke-width="1.8" stroke-linecap="round"/>
+</svg>

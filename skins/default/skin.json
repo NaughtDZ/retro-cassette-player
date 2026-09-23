@@ -145,6 +145,10 @@
     "prog_thumb": "prog_thumb.svg",
     "lcd_strip": "lcd_strip.svg",
     "lcd_bg": "lcd_bg.svg",
-    "reel_coil": "reel_coil.svg"
+    "reel_coil": "reel_coil.svg",
+    "console_zone": "console_zone.svg",
+    "console_knob": "console_knob.svg",
+    "console_knob_lit": "console_knob_lit.svg",
+    "console_knob_pointer": "console_knob_pointer.svg"
   }
 }
