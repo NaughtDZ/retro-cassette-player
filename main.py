@@ -4,8 +4,13 @@
 """
 import os
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from app.log_util import install_stdout_fallback
+
+install_stdout_fallback()      # pythonw 下把 print 导向 config\app.log，出问题才有迹可查
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QIcon
@@ -44,6 +49,7 @@ class PlayerApp:
         self.skin_name = str(self.settings.get("skin") or "default")
         self.want_play = True
         self._cover_workers: list[CoverWorker] = []
+        self._probe_workers: list[ProbeWorker] = []   # 持有所有在跑的探测线程，直到它自己结束
         self._probe_worker = None
 
         deck_content = DeckWidget(self._make_skin())
@@ -96,6 +102,7 @@ class PlayerApp:
         if app is not None:
             app.aboutToQuit.connect(self._save_settings)
             app.aboutToQuit.connect(self._save_session)
+            app.aboutToQuit.connect(self._shutdown_workers)
         self._apply_settings()
         self._restore_session()
 
@@ -347,20 +354,65 @@ class PlayerApp:
             self._probe([t.path for t in self.model.tracks[before:]])
 
     def _probe(self, paths):
+        """批量探测元数据（后台线程逐个 ffprobe，逐条回灌模型）。
+
+        ★ 必须持有每个 ProbeWorker 的引用直到它自己结束：QThread 在**仍在运行时**
+        被垃圾回收会让进程直接 abort——症状就是"添加文件夹时闪退"（上一批探测还在跑，
+        新一批把旧线程唯一的引用覆盖掉，旧线程随即被回收）。也绝不强杀旧线程，让它跑完。
+        """
+        paths = list(paths or [])
+        if not paths:
+            return
         w = ProbeWorker(self.ffprobe_exe, paths)
         w.one.connect(lambda p, meta: self.model.apply_meta(p, meta))
+        w.finished.connect(self._reap_workers)
+        self._probe_workers.append(w)   # 先入列再 start，任何时刻都有引用兜底
+        self._probe_worker = w          # 兼容旧引用（测试脚本会等它）
+        self._reap_workers()            # 顺手回收已经结束的旧 worker
         w.start()
-        self._probe_worker = w
+
+    def _reap_workers(self):
+        """清掉**已经结束**的线程引用。
+
+        判断必须用 isFinished() 而不是 not isRunning()：QThread.start() 是异步的，
+        刚 start 的线程在下一行 isRunning() 仍可能是 False，用它筛会把新线程当场丢掉，
+        于是又回到"运行中被 GC → 进程 abort"。
+        """
+        self._probe_workers = [w for w in self._probe_workers if not w.isFinished()]
+        self._cover_workers = [w for w in self._cover_workers if not w.isFinished()]
+
+    def _shutdown_workers(self):
+        """退出前让后台线程收尾：带着运行中的 QThread 退进程会直接 abort。
+
+        先请求取消（探测线程每个文件之间会检查），再限时等待；实在不结束也不强杀
+        —— 宁可多等一会儿，也不要留一个运行中的线程给解释器收拾。
+        """
+        workers = list(self._probe_workers) + list(self._cover_workers)
+        for w in workers:
+            try:
+                if hasattr(w, "cancel"):
+                    w.cancel()
+            except Exception:
+                pass
+        deadline = time.monotonic() + 3.0
+        for w in workers:
+            try:
+                if w.isRunning():
+                    w.wait(max(0, int((deadline - time.monotonic()) * 1000)))
+            except Exception:
+                pass
 
     # ---------------- 封面 ----------------
     def _cover_for(self, path):
-        for w in self._cover_workers:
-            if w.path == str(path) and w.isRunning():
+        path = str(path)
+        for w in self._cover_workers:            # 同一首已经在抽了就别重复开线程
+            if w.path == path and not w.isFinished():
                 return
         w = CoverWorker(self.ffmpeg_exe, self.cache_dir, path)
         w.ready.connect(self._on_cover_ready)
-        w.start()
+        w.finished.connect(self._reap_workers)
         self._cover_workers.append(w)
+        w.start()                                # 先入列再 start：保证时刻有引用
 
     def _on_cover_ready(self, path, pm):
         cur = self.model.current
@@ -375,8 +427,8 @@ class PlayerApp:
         eject = self.model.needs_eject(self.model.current, idx)
         self.model.set_current(idx)
         t = self.model.tracks[idx]
-        if not t.duration:                     # 会话快照没覆盖到的曲目：播放时才补读元数据
-            self._probe([t.path])
+        if not t.duration and not any(w.isRunning() for w in self._probe_workers):
+            self._probe([t.path])              # 单曲补读（已有全量探测在跑就不重复开）
         sub = " · ".join(x for x in (t.artist, t.album) if x)
         self.deck.set_labels(t.title, sub)
         self._cover_for(t.path)

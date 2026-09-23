@@ -138,7 +138,11 @@ class AudioEngine(QObject):
                 if not data:
                     break
                 if self.tape_fx.available:
-                    data = self.tape_fx.process(data)      # 磁带染色（后台线程，不阻塞 GUI）
+                    # 只把"完整帧"交给 DSP：管道 read 可能返回非 4 字节整数倍，
+                    # 直接按 len//4 处理会把声道错位、污染后面整条流。
+                    aligned = len(data) - (len(data) % 4)
+                    if aligned:
+                        data = self.tape_fx.process(data[:aligned]) + data[aligned:]
                 with self._lock:
                     self._buf.append(data)
                     self._decoded += len(data)

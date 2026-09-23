@@ -2,7 +2,7 @@
 import os
 import random
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, QTimer, Signal
 
 
 class Track:
@@ -33,6 +33,12 @@ class PlaylistModel(QObject):
         self.current = -1
         self.loop_mode = self.MODE_SEQUENCE
         self._shuffle_hist: list[int] = []    # 随机模式下的播放历史（供"上一首"回退）
+        # 批量探测元数据时合并刷新：否则上千首会触发上千次列表重建
+        self._meta_dirty = False
+        self._meta_timer = QTimer(self)
+        self._meta_timer.setSingleShot(True)
+        self._meta_timer.setInterval(200)
+        self._meta_timer.timeout.connect(self._flush_meta)
 
     # ---------------- 装载 ----------------
     def load_files(self, paths):
@@ -66,7 +72,21 @@ class PlaylistModel(QObject):
                 t.album = meta.get("album", "")
                 t.duration = float(meta.get("duration", 0.0) or 0.0)
                 break
-        self.changed.emit()
+        # 200ms 内的批量结果合并成一次 changed：列表只重建一次，而不是每首一次
+        self._meta_dirty = True
+        if not self._meta_timer.isActive():
+            self._meta_timer.start()
+
+    def flush_meta(self):
+        """把挂起的元数据刷新立刻发出去（需要即时刷新时调用）。"""
+        if self._meta_timer.isActive():
+            self._meta_timer.stop()
+        self._flush_meta()
+
+    def _flush_meta(self):
+        if self._meta_dirty:
+            self._meta_dirty = False
+            self.changed.emit()
 
     # ---------------- 导航 ----------------
     def set_current(self, idx):

@@ -110,10 +110,20 @@ class ProbeWorker(QThread):
         super().__init__(parent)
         self.ffprobe_exe = ffprobe_exe
         self.paths = list(paths)
+        self._cancel = False
+
+    def cancel(self):
+        """请求尽快收尾（退出程序时调用，避免带着运行中的线程退进程）。"""
+        self._cancel = True
 
     def run(self):
         for p in self.paths:
-            self.one.emit(p, probe_info(self.ffprobe_exe, p))
+            if self._cancel:
+                break
+            try:
+                self.one.emit(p, probe_info(self.ffprobe_exe, p))
+            except Exception as e:      # 线程里任何异常都不该把整个进程带走
+                print(f"[probe] emit 失败 {p}: {e}")
         self.done.emit()
 
 
