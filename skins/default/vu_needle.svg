@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="134" height="134" viewBox="0 0 134 134">
+  <!-- 中心即转轴，指针竖直朝上；程序按数值旋转 -->
+  <line x1="67.08" y1="73.08" x2="67.08" y2="2.50" stroke="#241d14" stroke-width="1.9" stroke-linecap="round"/>
+  <circle cx="67.08" cy="67.08" r="3.4" fill="#241d14"/>
+</svg>

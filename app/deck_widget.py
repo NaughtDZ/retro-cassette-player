@@ -224,8 +224,16 @@ class DeckWidget(QWidget):
         p.restore()
 
     def _paint_vu_meter(self, p, r, pos, hot, label):
-        """一只复古动圈 VU 表：木质外框 + 奶油表盘 + 刻度弧 + 指针 + 过载灯。"""
+        """一只复古动圈 VU 表：木质外框 + 奶油表盘 + 刻度弧 + 指针 + 过载灯。
+
+        v1.1.0：木框/表盘/刻度/数字/玻璃反光这些**静态**部分可整张换成 ``vu_dial`` 资源，
+        此时程序只画动态部分（指针 + 过载灯 + 声道标记）。
+        """
         rr = QRectF(r)
+        if self.skin.has_asset("vu_dial"):
+            self.skin.draw_asset(p, "vu_dial", rr)
+            self._paint_vu_dynamic(p, rr, pos, hot, label)
+            return
         cx = rr.center().x()
         dial = rr.adjusted(5.0, 5.0, -5.0, -5.0)
         axis = QPointF(cx, dial.top() + dial.height() * 0.9)     # 指针转轴（表盘偏下）
@@ -311,6 +319,39 @@ class DeckWidget(QWidget):
         p.setFont(f2)
         p.setPen(QColor("#4a4033"))
         p.drawText(QRectF(dial.left() + 6, dial.bottom() - 18, 30, 14), Qt.AlignLeft | Qt.AlignVCenter, label)
+
+    def _paint_vu_dynamic(self, p, rr, pos, hot, label):
+        """走资源表盘时要画的动态部分：指针（可换图，按数值旋转）+ 过载灯 + 声道标记。
+
+        指针图约定：**正方形、中心即转轴、指针竖直朝上**；旋转角 = 从正上方向顺时针
+        转过的度数（VU 扫角 VU_ARC，中点为 0°）。
+        """
+        s = self.skin
+        dial = rr.adjusted(5.0, 5.0, -5.0, -5.0)
+        axis = QPointF(rr.center().x(), dial.top() + dial.height() * 0.9)
+        rad_arc = dial.height() * 0.78
+        ang = self.VU_ARC * (2.0 * pos - 1.0)
+        needle_rect = QRectF(axis.x() - rad_arc, axis.y() - rad_arc, rad_arc * 2, rad_arc * 2)
+        s.draw_rotated(p, "vu_needle", needle_rect, ang,
+                       fallback=lambda pp: self._paint_vu_needle(pp, axis, rad_arc, pos))
+        p.setPen(Qt.NoPen)                                   # 轴帽
+        p.setBrush(QColor("#241d14"))
+        p.drawEllipse(axis, 3.4, 3.4)
+        p.setBrush(QColor(255, 96, 64) if hot > 0 else QColor(96, 62, 52))
+        p.drawEllipse(QPointF(dial.right() - 12, dial.bottom() - 11), 3.2, 3.2)
+        f2 = QFont()
+        f2.setPointSizeF(7.0)
+        f2.setBold(True)
+        p.setFont(f2)
+        p.setPen(QColor("#4a4033"))
+        p.drawText(QRectF(dial.left() + 6, dial.bottom() - 18, 30, 14),
+                   Qt.AlignLeft | Qt.AlignVCenter, label)
+
+    def _paint_vu_needle(self, p, axis, rad_arc, pos):
+        ca, sa = self._vu_dir(pos)
+        p.setPen(QPen(QColor("#241d14"), 1.9, Qt.SolidLine, Qt.RoundCap))
+        p.drawLine(QPointF(axis.x() - ca * 6.0, axis.y() - sa * 6.0),
+                   QPointF(axis.x() + ca * (rad_arc - 2.5), axis.y() + sa * (rad_arc - 2.5)))
 
     def trigger_swap(self):
         self._anim.trigger_swap()
@@ -543,6 +584,22 @@ class DeckWidget(QWidget):
         p.save()
         p.setRenderHint(QPainter.Antialiasing)
 
+        # v1.1.0：刻度环 + 旋钮帽 + 滚花 + 内圈亮线这些静态部分可整张换成 knob_vol 资源；
+        # 指针与 VOL 读数仍是程序按数值绘制（指针也可另用 knob_vol_pointer 换图）。
+        # 注意：刻度环"已过音量亮起"是动态效果，换成静态底图后不再有，这是资源化的取舍。
+        if s.has_asset("knob_vol"):
+            s.draw_asset(p, "knob_vol", QRectF(r))
+            s.draw_rotated(p, "knob_vol_pointer",
+                           QRectF(cx - ring, cy - ring, ring * 2, ring * 2),
+                           -span / 2.0 + span * self.volume,
+                           fallback=lambda pp: self._paint_knob_pointer(pp, cx, cy, cap, span))
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor("#5a6b76"))
+            p.drawEllipse(QPointF(cx, cy), cap * 0.15, cap * 0.15)
+            self._paint_knob_readout(p, r, cy, ring)
+            p.restore()
+            return
+
         # 刻度环（11 道，已过音量的亮起）
         for i in range(11):
             frac = i / 10.0
@@ -601,6 +658,25 @@ class DeckWidget(QWidget):
         p.drawText(QRectF(r.left() - 14, cy + ring + 1, r.width() + 28, 14),
                    Qt.AlignHCenter | Qt.AlignVCenter, f"VOL {int(round(self.volume * 100))}")
         p.restore()
+
+    def _paint_knob_pointer(self, p, cx, cy, cap, span):
+        """程序画音量旋钮指针（无 knob_vol_pointer 资源时用）。"""
+        ang = math.radians(-span / 2 + span * self.volume)
+        sx, sy = math.sin(ang), -math.cos(ang)
+        p.setPen(QPen(QColor("#1e2c36"), 2.8, Qt.SolidLine, Qt.RoundCap))
+        p.drawLine(QPointF(cx + sx * cap * 0.16, cy + sy * cap * 0.16),
+                   QPointF(cx + sx * cap * 0.80, cy + sy * cap * 0.80))
+
+    def _paint_knob_readout(self, p, r, cy, ring):
+        """VOL 读数（悬停或拧动时更亮，方便看数值）。"""
+        f = QFont()
+        f.setPointSizeF(7.5)
+        f.setBold(True)
+        p.setFont(f)
+        active = self._knob_ref_ang is not None or self._knob_hover
+        p.setPen(QColor(255, 255, 255) if active else self.skin.color("base_lip"))
+        p.drawText(QRectF(r.left() - 14, cy + ring + 1, r.width() + 28, 14),
+                   Qt.AlignHCenter | Qt.AlignVCenter, f"VOL {int(round(self.volume * 100))}")
 
     def _paint_tape(self, p):
         s = self.skin

@@ -24,21 +24,96 @@
     "lcd_fg": "#8dffab"
   },
   "layout": {
-    "tape": [220, 96, 520, 356],
-    "base": [76, 468, 808, 132],
-    "btn_prev": [238, 516, 46, 46],
-    "btn_play": [312, 516, 46, 46],
-    "btn_next": [386, 516, 46, 46],
-    "btn_stop": [460, 516, 46, 46],
-    "btn_loop": [560, 516, 46, 46],
-    "win_min": [662, 520, 34, 34],
-    "win_menu": [704, 520, 34, 34],
-    "win_list": [746, 520, 34, 34],
-    "win_close": [788, 520, 34, 34],
-    "knob": [134, 508, 64, 64],
-    "vu_left": [46, 296, 148, 96],
-    "vu_right": [766, 296, 148, 96],
-    "btn_console": [610, 516, 46, 46]
+    "tape": [
+      220,
+      96,
+      520,
+      356
+    ],
+    "base": [
+      76,
+      468,
+      808,
+      132
+    ],
+    "btn_prev": [
+      238,
+      516,
+      46,
+      46
+    ],
+    "btn_play": [
+      312,
+      516,
+      46,
+      46
+    ],
+    "btn_next": [
+      386,
+      516,
+      46,
+      46
+    ],
+    "btn_stop": [
+      460,
+      516,
+      46,
+      46
+    ],
+    "btn_loop": [
+      560,
+      516,
+      46,
+      46
+    ],
+    "win_min": [
+      662,
+      520,
+      34,
+      34
+    ],
+    "win_menu": [
+      704,
+      520,
+      34,
+      34
+    ],
+    "win_list": [
+      746,
+      520,
+      34,
+      34
+    ],
+    "win_close": [
+      788,
+      520,
+      34,
+      34
+    ],
+    "knob": [
+      134,
+      508,
+      64,
+      64
+    ],
+    "vu_left": [
+      46,
+      296,
+      148,
+      96
+    ],
+    "vu_right": [
+      766,
+      296,
+      148,
+      96
+    ],
+    "btn_console": [
+      610,
+      516,
+      46,
+      46
+    ]
   },
   "assets": {
     "base": "base.svg",
@@ -58,6 +133,10 @@
     "win_min": "win_min.svg",
     "win_menu": "win_menu.svg",
     "win_list": "win_list.svg",
-    "win_close": "win_close.svg"
+    "win_close": "win_close.svg",
+    "vu_dial": "vu_dial.svg",
+    "vu_needle": "vu_needle.svg",
+    "knob_vol": "knob_vol.svg",
+    "knob_vol_pointer": "knob_vol_pointer.svg"
   }
 }
