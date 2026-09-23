@@ -51,7 +51,7 @@ DEFAULTS = {
 
 # 参数的中文标签与范围，供 console 面板生成控件（min, max, step, 是否整数）
 PARAM_SPEC = {
-    "input_gain_db":  ("输入增益", -24.0, 24.0, 0.5, False, "dB"),
+    "input_gain_db":  ("驱动 DRIVE", -24.0, 24.0, 0.5, False, "dB"),
     "output_gain_db": ("输出增益", -24.0, 24.0, 0.5, False, "dB"),
     "bias":           ("偏磁", 0.0, 1.0, 0.01, False, ""),   # 0..1，0.5 中性（需关 AUTO CAL 才生效）
     "noise":          ("磁带噪声", 0.0, 100.0, 1.0, False, "%"),
@@ -114,6 +114,9 @@ class TapeFx:
         self.modules = {k: True for k in MODULE_NEUTRAL}   # 分区开关状态
         self._module_saved = {}                            # 分区关闭时记住的用户值
         self._glitches = 0                                 # DSP 输出异常次数（写日志用）
+        self._soft_clips = 0                               # 触发软限幅的块数（写日志用）
+        self._last_pre_peak = 0.0                          # 软限幅前的最高峰值（诊断用）
+        self._safety_gain = 1.0                            # 防持续过载的慢速安全增益
         self._pending_set_t = 0.0                          # 最近一次参数变更时刻（探针）
         self.set_to_process_ms = 0.0                       # 实测：变更到下一次处理的毫秒数
         self._np = _try_numpy()
@@ -299,4 +302,22 @@ class TapeFx:
             if self._glitches in (1, 10, 100):
                 print(f"[tape_fx] DSP 输出异常（第 {self._glitches} 次），已退回原始音频")
             return data
+        # 软限幅：磁带重放均衡与磁滞在高电平处会有明显过冲（实测输入已满幅的真实音乐
+        # 会被推到 1.82），直接硬 clip 就是刺耳的削波。用 0.98*tanh(x/0.98)：
+        # 小信号几乎完全线性（|x|<0.3 时误差 <1%），只有接近满幅才渐进压缩，
+        # 且数学上永远 |out| < 0.98，不会溢出。
+        peak = float(np.abs(dst).max())
+        if peak > 0.7:
+            self._last_pre_peak = max(self._last_pre_peak, peak)   # 限幅前的真实峰值（诊断）
+            dst = 0.98 * np.tanh(dst / 0.98)
+            self._soft_clips += 1
+        # 防持续过载：软限幅只处理瞬时，若整段都压在近满幅（真实音乐常见），
+        # 再叠一个慢速安全增益，把电平拉回可控范围，避免长时间听感发糊。
+        rms = float(np.sqrt((dst ** 2).mean()))
+        if rms > 0.35:
+            self._safety_gain = max(0.25, self._safety_gain * 0.995)
+        elif rms < 0.18:
+            self._safety_gain = min(1.0, self._safety_gain * 1.002)
+        if self._safety_gain < 0.999:
+            dst = dst * self._safety_gain
         return (np.clip(dst, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()

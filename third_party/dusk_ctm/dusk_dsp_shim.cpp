@@ -104,7 +104,11 @@ DUSK_EXPORT void dusk_set(void* h, int id, float v)
         case P_AUTO_CAL:        d.setAutoCal(v > 0.5f); break;
         case P_HIGHPASS_HZ:     d.setHighpassHz(v); break;
         case P_LOWPASS_HZ:      d.setLowpassHz(v); break;
-        case P_NOISE:           d.setNoiseAmount(v); break;
+        case P_NOISE:           // core 里噪声有个独立开关且默认关闭（pNoiseEnabled=false），
+                                // 只设量而不开开关的话，NOISE 旋钮永远没有任何效果。
+                                d.setNoiseAmount(v);
+                                d.setNoiseEnabled(v > 0.001f);
+                                break;
         case P_WOW:             d.setWow(v); break;
         case P_FLUTTER:         d.setFlutter(v); break;
         case P_OUTPUT_GAIN_DB:  d.setOutputGainDb(v); break;

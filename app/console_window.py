@@ -323,8 +323,7 @@ class ConsoleSurface(QWidget):
         # 刻度环
         for i in range(11):
             t = i / 10.0
-            a = math.radians(90.0 - span / 2.0 + span * t)
-            ca, sa = math.cos(a), -math.sin(a)
+            ca, sa = self._knob_dir(t, span)
             lit = t <= frac + 1e-6
             p.setPen(QPen(self._color("knob_pointer", "#d8c79a") if lit else
                           QColor(255, 255, 255, 40), 1.6 if lit else 1.2,
@@ -355,9 +354,8 @@ class ConsoleSurface(QWidget):
             ca, sa = math.cos(a), math.sin(a)
             p.drawLine(QPointF(cx + ca * cap * 0.87, cy + sa * cap * 0.87),
                        QPointF(cx + ca * cap * 0.98, cy + sa * cap * 0.98))
-        # 指针
-        a = math.radians(90.0 - span / 2.0 + span * frac)
-        ca, sa = math.cos(a), -math.sin(a)
+        # 指针（顺时针 = 增大）
+        ca, sa = self._knob_dir(frac, span)
         p.setPen(QPen(self._color("knob_mark", "#241d14"), 2.0, Qt.SolidLine, Qt.RoundCap))
         p.drawLine(QPointF(cx + ca * cap * 0.12, cy + sa * cap * 0.12),
                    QPointF(cx + ca * cap * 0.86, cy + sa * cap * 0.86))
@@ -378,6 +376,16 @@ class ConsoleSurface(QWidget):
         p.drawText(QRectF(r.left() - 20, r.bottom() + 10, r.width() + 40, 13),
                    Qt.AlignHCenter | Qt.AlignVCenter, c.value_text(self.values.get(c.name, c.lo)))
 
+    @staticmethod
+    def _knob_dir(frac, span):
+        """旋钮表盘上的方向（屏幕坐标）：frac=0 → 左下（逆时针到底），frac=1 → 右下（顺时针到底）。
+
+        顺时针 = 增大，这与真实旋钮一致。旧公式 `90 - span/2 + span*frac` 是镜像的：
+        它把最小值画在右下、最大值画在左下，看起来就成了"逆时针变大"。
+        """
+        a = math.radians(90.0 + span / 2.0 - span * max(0.0, min(1.0, float(frac))))
+        return math.cos(a), -math.sin(a)
+
     def _paint_switch(self, p, c: Control):
         r = QRectF(c.rect)
         cx, cy = r.center().x(), r.center().y()
@@ -390,8 +398,7 @@ class ConsoleSurface(QWidget):
         span = min(240.0, 40.0 * (n - 1))
         for i in range(n):
             t = i / (n - 1.0) if n > 1 else 0.5
-            a = math.radians(90.0 - span / 2.0 + span * t)
-            ca, sa = math.cos(a), -math.sin(a)
+            ca, sa = self._knob_dir(t, span)
             on = i == idx
             p.setPen(Qt.NoPen)
             p.setBrush(QColor(255, 214, 120) if on else QColor(255, 255, 255, 55))
