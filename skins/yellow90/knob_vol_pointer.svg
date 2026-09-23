@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- 中心即转轴，指针竖直朝上；程序按音量旋转（扫角 300°） -->
+  <line x1="32.00" y1="28.31" x2="32.00" y2="13.57" stroke="#241d08" stroke-width="2.8" stroke-linecap="round"/>
+</svg>
