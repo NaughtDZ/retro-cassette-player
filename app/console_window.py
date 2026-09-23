@@ -293,6 +293,15 @@ class ConsoleSurface(QWidget):
         if module:
             on = bool(self.modules.get(module, True))
             self._paint_led_toggle(p, self.zone_toggle_rect(zi), on, "ON" if on else "OFF")
+            if not on:
+                # 被旁通的分区在面板中央明确标出来：该区参数已回中性
+                # （磁带机本身的染色属于 TAPE 区，只有 POWER 能整体关掉）
+                f3 = QFont()
+                f3.setPointSizeF(9.0)
+                f3.setBold(True)
+                p.setFont(f3)
+                p.setPen(QColor(150, 92, 84, 170))
+                p.drawText(zr.adjusted(0, 18, 0, 0), Qt.AlignCenter, "BYPASS")
         else:
             f2 = QFont()
             f2.setPointSizeF(6.4)
@@ -464,7 +473,10 @@ class ConsoleSurface(QWidget):
             return
         if c.kind == "knob":
             if e.button() == Qt.LeftButton:
-                self._drag, self._drag_ref = c, (self._angle(pos, c), self.values.get(c.name, c.lo))
+                # 垂直拖动（主流旋钮交互）：记下按下时的 y 与值，向上拖 = 增大。
+                # 不再用"绕着圆心转"，那个方向还跟真实旋钮相反（逆时针增大）。
+                self._drag, self._drag_ref = c, (pos.y(), self.values.get(c.name, c.lo))
+                self.setCursor(Qt.SizeVerCursor)
         elif e.button() == Qt.LeftButton:
             self._bump_switch(c, +1)
         self.update()
@@ -487,16 +499,20 @@ class ConsoleSurface(QWidget):
             self._hover = c
             if c is None:
                 self.setCursor(Qt.OpenHandCursor)             # 空白处提示可拖动
+            elif c.kind == "knob":
+                self.setCursor(Qt.SizeVerCursor)              # 旋钮：上下拖
             else:
                 self.setCursor(Qt.PointingHandCursor)
             self.update()
         if self._drag is not None and self._drag_ref is not None:
-            ref_ang, ref_val = self._drag_ref
-            delta = self._angle(pos, self._drag) - ref_ang
-            delta = (delta + 180.0) % 360.0 - 180.0
-            span = 270.0
+            y0, v0 = self._drag_ref
             c = self._drag
-            v = ref_val + (delta / span) * (c.hi - c.lo)
+            # 向上 = 增大（屏幕 y 向下为正，所以用 y0 - pos.y()）。
+            # 200px 走完全程；按住 Shift 精调（1/5 步长）。
+            k = (y0 - pos.y()) / 200.0
+            if e.modifiers() & Qt.ShiftModifier:
+                k *= 0.2
+            v = v0 + k * (c.hi - c.lo)
             v = max(c.lo, min(c.hi, v))
             if c.step > 0:
                 v = round(v / c.step) * c.step

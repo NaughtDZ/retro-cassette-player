@@ -61,8 +61,7 @@ class PlayerApp:
         self.console_win = ConsoleWindow(self.deck.skin, self.engine.tape_params())
         self.console_win.param_changed.connect(self.on_console_param)
         self.console_win.module_toggled.connect(self.engine.set_tape_module)
-        self.console_win.power_toggled.connect(
-            lambda on: self.engine.set_tape_param("active", 1.0 if on else 0.0))
+        self.console_win.power_toggled.connect(self.engine.set_tape_power)
 
         # ---------------- 信号装配 ----------------
         self.deck.action.connect(self.on_action)

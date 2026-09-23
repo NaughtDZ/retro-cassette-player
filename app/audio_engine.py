@@ -13,7 +13,7 @@ import threading
 import time
 from collections import deque
 
-from PySide6.QtCore import QObject, QTimer, Signal, QByteArray
+from PySide6.QtCore import QIODevice, QObject, QTimer, Signal
 from PySide6.QtMultimedia import QAudioFormat, QAudioSink, QAudio
 
 from .proc_util import popen_hidden
@@ -22,11 +22,13 @@ from .tape_fx import TapeFx
 SAMPLE_RATE = 48000
 CHANNELS = 2
 BITS = 16
-BYTES_PER_SEC = SAMPLE_RATE * CHANNELS * (BITS // 8)   # 384000 B/s
+BYTES_PER_SEC = SAMPLE_RATE * CHANNELS * (BITS // 8)   # 192000 B/s
 CHUNK = 8192
 BUFFER_CAP_SECONDS = 3          # 解码前瞻上限（超过则读取线程等待消费）
 MAX_TICK_SECONDS = 0.25         # 单次 tick 最多折算的实时量，防止卡顿后一次性猛拉
-LOOKAHEAD_SECONDS = 0.12        # 设备模式允许的额外前瞻，保证不欠载又不超前太多
+LOOKAHEAD_SECONDS = 0.12        # 虚拟实时模式下的额外前瞻
+OUTPUT_BUFFER_SECONDS = 0.12    # 真实输出设备缓冲：低到不影响手感，又留出抗抖动余量
+SIGNAL_PATH_THRU = 3.0          # signal_path 的 Thru 档：core 在此档直接 return input
 
 
 def find_ffmpeg(explicit_dir=None):
@@ -49,6 +51,61 @@ def find_ffmpeg(explicit_dir=None):
             if os.path.isfile(probe):
                 return {"dir": d, "ffmpeg": p, "ffprobe": probe}
     raise RuntimeError("未找到可用的 ffmpeg/ffprobe：请把静态构建放进 tools\\ffmpeg")
+
+
+class PcmSource(QIODevice):
+    """QAudioSink 的数据源（pull 模式：设备主动来拉，而不是我们往里推）。
+
+    拉数据的时机由 Qt 的音频线程决定，磁带 DSP 就在拉取现场处理，好处是两头都躲开了：
+
+    - **不在 GUI 线程**：打开 console 面板、换带动画这类界面卡顿再也不会把它饿死。
+      旧实现把 DSP 与投递都放在 GUI 线程，界面一卡输出缓冲就被抽空，听感就是爆音/白噪音。
+    - **不在解码线程**：不经过秒级的解码预读，改参数最多一个设备缓冲就生效。
+
+    代价是 readData 运行在音频线程上，所以它只做"取缓冲 + 过 DSP"，绝不阻塞、绝不做 UI 操作。
+    """
+
+    def __init__(self, engine):
+        super().__init__()
+        self._eng = engine
+
+    def isSequential(self):
+        return True
+
+    def bytesAvailable(self):
+        with self._eng._lock:
+            n = sum(len(b) for b in self._eng._buf)
+        return n + super().bytesAvailable()
+
+    def readData(self, maxlen):
+        eng = self._eng
+        need = int(maxlen)
+        if need <= 0:
+            return bytes(0)
+        with eng._lock:
+            out = bytearray()
+            while len(out) < need and eng._buf:
+                chunk = eng._buf[0]
+                room = need - len(out)
+                if len(chunk) <= room:
+                    out += chunk
+                    eng._buf.popleft()
+                else:
+                    out += chunk[:room]
+                    eng._buf[0] = chunk[room:]
+            if out:
+                eng._consumed += len(out)          # 位置以真正交给设备的字节为准
+        if not out:
+            if eng._eof_pending:
+                eng._drained = True                # 解码结束且缓冲抽干：交给 _feed 收尾
+            return bytes(0)
+        return bytes(eng._apply_tape_fx(out))
+
+    def readLineData(self, maxlen):
+        return bytes(0)
+
+    def writeData(self, data):
+        return 0
 
 
 class AudioEngine(QObject):
@@ -92,9 +149,13 @@ class AudioEngine(QObject):
                 self._sink = QAudioSink(fmt, self)
             except Exception:
                 self._sink = None         # 无音频设备（如 offscreen）时降级为虚拟实时播放
-        self._device = None           # Qt6.11：start() 返回的 QIODevice，数据经它写入
+        self._device = None           # 兼容保留：pull 模式下由 _pull 表示设备在跑
+        self._source = None           # PcmSource（pull 模式的取数源）
+        self._pull = False            # True = 真实设备在主动拉数据
+        self._drained = False         # pull 模式：解码结束且缓冲已抽干
         self._sink_failed = False
         self._starved = 0             # 设备连续拒收次数
+        self._saved_signal_path = 0.0  # 总开关关掉前的 signal_path（打开时恢复）
 
         self._feed_timer = QTimer(self)
         self._feed_timer.setInterval(30)
@@ -121,6 +182,7 @@ class AudioEngine(QObject):
             self._consumed = int(offset * BYTES_PER_SEC)
             self._decoded = 0
         self._eof_pending = False
+        self._drained = False
         self._failed = False
         self._last_feed_t = time.monotonic()
         # 实时配额锚点：位置最多超前 LOOKAHEAD_SECONDS，保证不因设备吞得快而"瞬播完"
@@ -181,25 +243,31 @@ class AudioEngine(QObject):
             except Exception:
                 pass
 
-    # ---------------- 音频输出（Qt6.11：start() → QIODevice 写入） ----------------
+    # ---------------- 音频输出（pull 模式：Qt 音频线程主动来拉数据） ----------------
     def _restart_sink(self):
-        """(重)启音频输出并取得可写 QIODevice；失败时降级为虚拟实时模式。"""
+        """(重)启音频输出，让设备从我们的 PcmSource 拉数据；失败时降级为虚拟实时。"""
         self._device = None
         self._sink_failed = False
         if self._sink is None:
             return
         try:
-            if self._sink.state() == QAudio.State.ActiveState and self._device is not None:
-                return                      # 设备已在跑：沿用现有 QIODevice，避免重复 start 警告
+            if self._pull and self._sink.state() == QAudio.State.ActiveState:
+                return                      # 已在拉：沿用，避免重复 start 警告
             if self._sink.state() != QAudio.State.StoppedState:
                 self._sink.stop()
-            self._device = self._sink.start() or None
+            if self._source is None:
+                self._source = PcmSource(self)
+            try:
+                self._sink.setBufferSize(int(BYTES_PER_SEC * OUTPUT_BUFFER_SECONDS))
+            except Exception:
+                pass
+            self._sink.start(self._source)
+            self._pull = True
             self._apply_volume()            # 每次起设备都把面板音量重新灌进去
-            if self._device is None:
-                self._sink_failed = True
         except Exception as e:
             print(f"[audio] sink 启动失败：{e}")
             self._sink_failed = True
+            self._pull = False
 
     def _apply_volume(self):
         try:
@@ -218,24 +286,28 @@ class AudioEngine(QObject):
         self.volume_changed.emit(v)
 
     def _ensure_device(self):
-        """确保输出设备可用（懒启动；设备故障后不再反复重试）。"""
-        if self._device is not None or self._sink is None or self._sink_failed:
-            return self._device
+        """确保输出在跑（懒启动；设备故障后不再反复重试）。返回 True 表示设备在拉数据。"""
+        if self._sink is None or self._sink_failed:
+            return False
         try:
             if self._sink.error() != QAudio.Error.NoError:
                 self._sink_failed = True
-                return None
-            if self._sink.state() in (QAudio.State.IdleState, QAudio.State.SuspendedState,
-                                      QAudio.State.StoppedState):
-                self._device = self._sink.start() or None
-                self._apply_volume()
+                self._pull = False
+                return False
+            if not self._pull or self._sink.state() == QAudio.State.StoppedState:
+                self._restart_sink()
         except Exception as e:
             print(f"[audio] sink 启动失败：{e}")
             self._sink_failed = True
-        return self._device
+            self._pull = False
+        return self._pull
 
     def _feed(self):
-        """按实时节奏把 PCM 投递给输出；顺带检查曲目结束（无音卡同样按实时推进）。"""
+        """维护播放推进与结束判定。
+
+        pull 模式下数据由 Qt 的音频线程来拉，这里只管状态；没有真实设备时
+        （offscreen / 无音卡）退回"虚拟实时"：按时间自己消耗缓冲，进度照常推进。
+        """
         now = time.monotonic()
         if not (self.playing and self.path):
             self._last_feed_t = now       # 暂停/停止期间不累积时间
@@ -244,34 +316,18 @@ class AudioEngine(QObject):
         dt = min(MAX_TICK_SECONDS, max(0.0, now - self._last_feed_t))
         self._last_feed_t = now
 
-        dev = self._device or self._ensure_device()
-        # 实时配额：本 tick 最多投递到"已播时间 + 前瞻"对应的字节位置
+        if self._ensure_device():
+            self._check_eof()             # 真实设备：投递已交给 Qt 的音频线程
+            return
+
+        # 虚拟实时：按时间配额消耗
         quota = (int((now - self._anchor_t) * BYTES_PER_SEC)
                  + int(LOOKAHEAD_SECONDS * BYTES_PER_SEC)
                  - (self._consumed - self._anchor_bytes))
         if quota <= 0:
             self._check_eof()
             return
-        if dev is not None:
-            # 提交量由设备可写空间决定；write() 的返回值在本平台不可靠，故不据其回填
-            try:
-                free = max(0, int(self._sink.bytesFree()))
-            except Exception:
-                free = BYTES_PER_SEC
-            need = min(free, quota)
-            if need <= 0:
-                self._starved += 1
-                if self._starved > 40:        # 约 1.2 秒设备完全不消费 → 降级虚拟实时
-                    print("[audio] 输出设备不消费数据，降级为虚拟实时模式")
-                    self._sink_failed = True
-                    self._device = None
-                    self._starved = 0
-                self._check_eof()
-                return
-            self._starved = 0
-        else:
-            need = min(int(dt * BYTES_PER_SEC), quota)   # 虚拟实时：只消耗这段时间该播的量
-
+        need = min(int(dt * BYTES_PER_SEC), quota)
         with self._lock:
             data = bytearray()
             while len(data) < need and self._buf:
@@ -282,17 +338,10 @@ class AudioEngine(QObject):
                 else:
                     data += chunk[:remaining]
                     self._buf.appendleft(chunk[remaining:])
+            if data:
+                self._consumed += len(data)
         if data:
-            # 磁带染色放在**投递前**（而不是解码线程里）：解码前瞻能有好几秒，
-            # 若在那里处理，用户拧旋钮要等缓冲播完才听得到变化——表现为"特效起效延时极高"。
-            data = self._apply_tape_fx(data)
-            if dev is not None:
-                try:
-                    dev.write(QByteArray(bytes(data)))
-                except Exception:
-                    pass
-            with self._lock:
-                self._consumed += len(data)     # 以实际提交量计位置
+            self._apply_tape_fx(data)     # 无设备时不出声，但 DSP 链路照跑（VU / 参数一致）
         self._check_eof()
 
     def _apply_tape_fx(self, data: bytearray) -> bytearray:
@@ -310,11 +359,14 @@ class AudioEngine(QObject):
         return bytearray(self.tape_fx.process(raw[:aligned]) + raw[aligned:])
 
     def _check_eof(self):
-        if not (self._eof_pending and self.path and self.playing):
+        if not (self.path and self.playing):
+            return
+        if not (self._drained or self._eof_pending):
             return
         with self._lock:
             drained = not self._buf
         if drained:
+            self._drained = False
             self.playing = False
             self.playing_changed.emit(False)
             self.track_ended.emit()
@@ -334,6 +386,22 @@ class AudioEngine(QObject):
     def set_tape_module(self, name, enabled):
         """分区开关：一键让某个效果区块失效（参数置中性，可恢复）。"""
         self.tape_fx.set_module(name, enabled)
+
+    def set_tape_power(self, on: bool):
+        """磁带机总开关。
+
+        关掉时把 ``signal_path`` 切到 **Thru** —— core 在该档位直接 ``return input``，
+        是真正零延迟、零染色的旁通（比只把 active 置 0 更彻底）；打开时恢复用户原来的档位。
+        """
+        try:
+            if on:
+                self.tape_fx.set("signal_path", self._saved_signal_path)
+            else:
+                self._saved_signal_path = float(self.tape_fx.params.get("signal_path", 0.0))
+                self.tape_fx.set("signal_path", SIGNAL_PATH_THRU)
+            self.tape_fx.set("active", 1.0 if on else 0.0)
+        except Exception as e:
+            print(f"[audio] 总开关切换失败：{e}")
 
     def tape_params(self):
         return dict(self.tape_fx.params)

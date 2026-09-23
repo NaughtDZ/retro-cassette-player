@@ -86,12 +86,21 @@ def stats(out_bytes, lag, baseline=None):
     finite = bool(np.isfinite(left).all())
     peak = float(np.abs(y).max()) if left.size else 0.0
     rms = float(np.sqrt((left ** 2).mean())) if left.size else 0.0
+    # 谱重心：与相位无关的"音色"特征。逐样本差值受延迟/相位影响极大
+    # （磁带重放均衡本身就有相移），用它判断"参数是否改变声音"会误判。
+    centroid = 0.0
+    if left.size > 4096:
+        seg = left[:8192] * np.hanning(min(8192, left.size))
+        spec = np.abs(np.fft.rfft(seg))
+        freqs = np.fft.rfftfreq(seg.size, 1.0 / SR)
+        tot = spec.sum()
+        centroid = float((spec * freqs).sum() / tot) if tot > 0 else 0.0
     delta = -1.0
     if baseline is not None:
         a = mono_of(out_bytes, lag)
         n = min(len(a), len(baseline))
         delta = float(np.abs(a[:n] - baseline[:n]).mean()) if n else -1.0
-    return finite, peak, rms, delta
+    return finite, peak, rms, delta, centroid
 
 
 def main():
@@ -116,10 +125,11 @@ def main():
 
     ref_out = render_clean()
     ref_y = mono_of(ref_out, lag)
-    _, ref_peak, ref_rms, _ = stats(ref_out, lag)
-    print(f"[params] baseline (defaults, random sources off): rms={ref_rms:.5f} peak={ref_peak:.5f}\n")
+    _, ref_peak, ref_rms, _, ref_cent = stats(ref_out, lag)
+    print(f"[params] baseline (defaults, random sources off): rms={ref_rms:.5f} "
+          f"peak={ref_peak:.5f} centroid={ref_cent:.0f}Hz\n")
 
-    print(f"{'parameter':<17}{'value':>9}{'affects':>9}{'rms':>10}{'peak':>9}{'delta':>10}   note")
+    print(f"{'parameter':<17}{'value':>9}{'affects':>9}{'rms':>10}{'peak':>9}{'centroid':>10}   note")
     print("-" * 74)
 
     bad, inert = [], []
@@ -128,7 +138,7 @@ def main():
             fx.set(name, v)
             out = render_clean()
             fx.set(name, DEFAULTS.get(name, 0.0))
-            finite, peak, rms, delta = stats(out, lag, ref_y)
+            finite, peak, rms, delta, cent = stats(out, lag, ref_y)
 
             notes = []
             if not finite:
@@ -137,7 +147,9 @@ def main():
                 notes.append(f"CLIP peak={peak:.3f}")
             if rms < 1e-5 and ref_rms > 1e-3:
                 notes.append("SILENT")
-            affects = delta > CHANGE_EPS
+            # 判据：电平或音色变了才算"这个参数有作用"（相位无关）
+            affects = (abs(rms - ref_rms) > 1e-4 * max(1.0, ref_rms)
+                       or abs(cent - ref_cent) > max(5.0, 0.01 * ref_cent))
             if name == "active":                       # POWER 关闭应字节直通
                 if out != pcm:
                     notes.append("POWER off is NOT byte-exact passthrough")
@@ -145,7 +157,7 @@ def main():
                     notes.append("byte-exact passthrough OK")
             flag = "; ".join(notes) if notes else "ok"
             print(f"{name:<17}{v:>9.2f}{('yes' if affects else 'no'):>9}"
-                  f"{rms:>10.5f}{peak:>9.4f}{delta:>10.5f}   {flag}")
+                  f"{rms:>10.5f}{peak:>9.4f}{cent:>10.0f}   {flag}")
             if notes and "byte-exact passthrough OK" not in "; ".join(notes):
                 bad.append((name, v, notes))
             elif not affects and name != "active":
@@ -174,12 +186,15 @@ def main():
     fx.set("bias", 0.8)
     manual_b = render_clean()
     a_y, b_y = mono_of(manual_a, lag), mono_of(manual_b, lag)
-    n = min(len(a_y), len(b_y))
-    bias_delta = float(np.abs(a_y[:n] - b_y[:n]).mean())
-    auto_overrides = (with_auto == manual_b) or (abs(
-        float(np.abs(mono_of(with_auto, lag)[:n] - b_y[:n]).mean())) > 0.01)
-    print(f"\n[params] bias 专项：手动模式下 bias 0.2 vs 0.8 的差异 = {bias_delta:.5f}"
-          f"{'（有效）' if bias_delta > CHANGE_EPS else '（无效！）'}")
+    _, _, rms_a, _, cent_a = stats(manual_a, lag)
+    _, _, rms_b, _, cent_b = stats(manual_b, lag)
+    bias_changed = abs(rms_a - rms_b) > 1e-4 or abs(cent_a - cent_b) > 5.0
+    print(f"\n[params] bias 专项：手动模式下 bias 0.2 vs 0.8 → rms {rms_a:.5f}/{rms_b:.5f}，"
+          f"谱重心 {cent_a:.0f}/{cent_b:.0f} Hz → {'有效' if bias_changed else '无效！'}")
+    auto_y = mono_of(with_auto, lag)
+    n = min(len(auto_y), len(b_y))
+    auto_overrides = (with_auto == manual_b) or (
+        n > 0 and float(np.abs(auto_y[:n] - b_y[:n]).mean()) > 0.01)
     print(f"[params] bias 专项：AUTO CAL 开着时手感值被自动校准覆盖 = {auto_overrides}")
     fx.set("auto_cal", 1.0)
     fx.set("bias", 0.5)
