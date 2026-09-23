@@ -421,10 +421,9 @@ class ConsoleSurface(QWidget):
         p.setPen(QPen(self._color("knob_rim", "#6d6656"), 1.3))
         p.drawEllipse(QPointF(cx, cy), cap, cap)
 
-        # 拨杆
+        # 拨杆（挡位指针）：必须与上面的挡位灯用同一个方向函数，否则两者指向相反
         t = idx / (n - 1.0) if n > 1 else 0.5
-        a = math.radians(90.0 - span / 2.0 + span * t)
-        ca, sa = math.cos(a), -math.sin(a)
+        ca, sa = self._knob_dir(t, span)
         p.setPen(QPen(QColor("#e9e2cd"), 2.6, Qt.SolidLine, Qt.RoundCap))
         p.drawLine(QPointF(cx, cy), QPointF(cx + ca * cap * 0.86, cy + sa * cap * 0.86))
 
