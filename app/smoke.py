@@ -259,9 +259,17 @@ def main():
     diag_m = p.engine.tape_meters()
     floor_db = p.deck.VU_DB_MIN
     norm_l = p.deck._vu_norm(diag_m["vu_l"])
-    # 电平在持续变化，两次采样不会完全相等：只要求指针跟着读数走（映射函数另有专门断言）
-    assert abs(norm_l - p.deck._vu_target[0]) < 0.15, \
-        f"VU 目标值偏离 DSP 读数过多：{norm_l:.4f} vs {p.deck._vu_target[0]:.4f}"
+    # 实时电平与轮询值天生对不齐（原来用"近似相等"，是 flaky 的）。这里停掉轮询、
+    # 手动灌一组读数，断言变成**确定性**检查，比近似比较更有力。
+    p._meter_timer.stop()
+    probe = {"vu_l": 0.34, "vu_r": 0.21}
+    p.deck.set_meters(probe)
+    pump(0.05)
+    for _i, _k in enumerate(("vu_l", "vu_r")):
+        _want = p.deck._vu_norm(probe[_k])
+        assert abs(p.deck._vu_target[_i] - _want) < 1e-9, \
+            f"VU 目标值没按 DSP 读数换算：{_k} want={_want:.4f} got={p.deck._vu_target[_i]:.4f}"
+    p._meter_timer.start()
     assert p.deck._vu_norm(0.9) > 0.8, "满幅信号应把指针推到表盘右侧"
     assert p.deck._vu_norm(10 ** (floor_db / 20.0)) < 0.02, "低于表盘下限时应停在最左"
     print(f"[smoke] VU 表链路 OK（DSP vu_l={diag_m['vu_l']:.4f} → 指针 {p.deck._vu_target[0]:.3f}；"

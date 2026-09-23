@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="46" height="46" viewBox="0 0 46 46">
+  <defs>
+    <radialGradient id="f" cx="38%" cy="28%" r="82%">
+      <stop offset="0" stop-color="#ffe9a4"/>
+      <stop offset="0.42" stop-color="#ffd23f"/>
+      <stop offset="1" stop-color="#c9991b"/>
+    </radialGradient>
+  </defs>
+  <!-- 键槽（挖进面板的凹口：外圈深、内圈稍浅，做出嵌进去的深度） -->
+  <rect x="2.0" y="3.2" width="42.0" height="42.0" rx="12.0" fill="#08131b" opacity="0.55"/>
+  <rect x="3.2" y="4.4" width="39.6" height="39.6" rx="11.0" fill="#0d2536" opacity="0.45"/>
+  <!-- 键帽本体 -->
+  <rect x="4.4" y="2.4" width="37.2" height="37.2" rx="9.6" fill="url(#f)" stroke="#8a6a12" stroke-width="1.2"/>
+  <!-- 顶部高光带 + 更亮的细高光 -->
+  <rect x="6.6" y="4.3" width="32.8" height="13.6" rx="6.6" fill="#ffffff" opacity="0.34"/>
+  <rect x="7.8" y="5.4" width="30.4" height="6.0" rx="3.0" fill="#ffffff" opacity="0.30"/>
+  <!-- 底部内阴影 -->
+  <rect x="6.8" y="26.6" width="32.8" height="11.0" rx="5.8" fill="#7a5a08" opacity="0.38"/>
+  <!-- 内圈刻线 -->
+  <rect x="8.0" y="6.0" width="30.4" height="30.2" rx="7.4" fill="none" stroke="#ffffff" stroke-width="0.9" opacity="0.22"/>
+  <!-- 外沿暗边，压出塑料厚度 -->
+  <rect x="4.4" y="2.4" width="37.2" height="37.2" rx="9.6" fill="none" stroke="#000000" stroke-width="0.9" opacity="0.28"/>
+  <path d="M16 12.5 L34.5 23 L16 33.5 Z" fill="#23282e"/>
+</svg>

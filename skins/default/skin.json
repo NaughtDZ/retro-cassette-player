@@ -44,6 +44,20 @@
     "base": "base.svg",
     "tape_shell": "tape_shell.svg",
     "tape_inner": "tape_inner.svg",
-    "cover_placeholder": "cover_placeholder.svg"
+    "cover_placeholder": "cover_placeholder.svg",
+    "btn_prev": "btn_prev.svg",
+    "btn_play": "btn_play.svg",
+    "btn_pause": "btn_pause.svg",
+    "btn_next": "btn_next.svg",
+    "btn_stop": "btn_stop.svg",
+    "btn_sequence": "btn_sequence.svg",
+    "btn_repeat_one": "btn_repeat_one.svg",
+    "btn_loop": "btn_loop.svg",
+    "btn_shuffle": "btn_shuffle.svg",
+    "btn_console": "btn_console.svg",
+    "win_min": "win_min.svg",
+    "win_menu": "win_menu.svg",
+    "win_list": "win_list.svg",
+    "win_close": "win_close.svg"
   }
 }

@@ -190,6 +190,87 @@ class Skin:
             fallback(p)
         return False
 
+    # ---------------- 资源优先 / 程序回退 的统一入口 ----------------
+    # v1.1.0 起，**所有**绘制的图形都可以放进皮肤包：静态底图直接用资源，状态变体用后缀键，
+    # 随数值连续变化的元素（指针角度、卷径、进度填充）则约定成"资源 + 变换"。
+    # 任何一个 key 缺失或写成 "" 都会回退到程序矢量绘制，旧皮肤零改动可用。
+    STATE_SUFFIX = {"hover": "_hover", "down": "_down", "on": "_on", "off": "_off"}
+
+    def has_asset(self, key):
+        return bool(key) and key in self.assets
+
+    def resolve(self, key, state=None):
+        """按状态解析出真正要用的资源键；没有资源时返回 None。"""
+        if state:
+            alt = key + self.STATE_SUFFIX.get(state, "")
+            if alt in self.assets:
+                return alt
+        return key if key in self.assets else None
+
+    def draw_part(self, p, key, rect, state=None, fallback=None):
+        """带状态变体的资源绘制：有图用图，没有就交给 fallback（程序矢量）。"""
+        k = self.resolve(key, state)
+        if k is None:
+            if fallback is not None:
+                fallback(p)
+            return False
+        return self.draw_asset(p, k, rect, fallback)
+
+    def _part_pixmap(self, key, rect):
+        a = self.assets.get(key)
+        if a is None or rect is None:
+            return None
+        size = QSize(max(1, int(rect.width())), max(1, int(rect.height())))
+        if a[0] == "svg":
+            return self._asset_pixmap(key, size)
+        return a[1].scaled(size, 1, 2)
+
+    def draw_rotated(self, p, key, rect, angle_deg, fallback=None):
+        """把资源绕**图片中心**旋转后绘制（旋钮指针 / VU 指针）。
+
+        约定：指针图按 0° 画成"朝上"，中心即转轴；程序按数值换算角度。
+        """
+        pm = self._part_pixmap(key, rect)
+        if pm is None:
+            if fallback is not None:
+                fallback(p)
+            return False
+        c = QPointF(rect.center())
+        p.save()
+        p.translate(c)
+        p.rotate(float(angle_deg))
+        p.drawPixmap(QPointF(-pm.width() / 2.0, -pm.height() / 2.0), pm)
+        p.restore()
+        return True
+
+    def draw_scaled(self, p, key, rect, scale, fallback=None):
+        """按比例缩放绘制、中心对齐（磁带卷径随进度；约定图 = 最大状态）。"""
+        pm = self._part_pixmap(key, rect)
+        if pm is None or scale <= 0:
+            if fallback is not None:
+                fallback(p)
+            return False
+        w, h = pm.width() * float(scale), pm.height() * float(scale)
+        p.drawPixmap(QPointF(rect.center().x() - w / 2.0, rect.center().y() - h / 2.0),
+                     pm.scaled(int(max(1, w)), int(max(1, h)), 1, 2))
+        return True
+
+    def draw_clipped(self, p, key, rect, frac, fallback=None):
+        """按水平比例裁剪绘制（进度条填充；约定图 = 满值状态，从左向右露出）。"""
+        pm = self._part_pixmap(key, rect)
+        if pm is None:
+            if fallback is not None:
+                fallback(p)
+            return False
+        frac = max(0.0, min(1.0, float(frac)))
+        if frac <= 0.0:
+            return True
+        w = int(round(pm.width() * frac))
+        if w <= 0:
+            return True
+        p.drawPixmap(QPointF(rect.left(), rect.top()), pm, QRectF(0, 0, w, pm.height()))
+        return True
+
     @staticmethod
     def list_packs(skins_dir):
         names = []

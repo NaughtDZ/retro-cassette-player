@@ -470,7 +470,10 @@ class DeckWidget(QWidget):
             self._glyph(pp, asset_key, QRectF(r), glyph_c)
             pp.restore()
 
-        s.draw_asset(p, asset_key, r, fb)
+        # 状态变体：给了 btn_play_down / btn_play_hover 就用皮肤自己的图，
+        # 没给就用 base_paint（程序按 hover/pressed 调制颜色）——旧皮肤行为不变。
+        state = "down" if pressed else ("hover" if hover else None)
+        s.draw_part(p, asset_key, r, state=state, fallback=fb)
 
     def _paint_key_body(self, p, r, key, hover, pressed):
         """复古塑料键帽：外壳上挖出的键槽 + 上亮下暗的塑料面 + 倒角高光。"""
