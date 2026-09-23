@@ -760,13 +760,17 @@ class DeckWidget(QWidget):
         """白色标签纸 + 封面 + 标题/副标题（白纸深字，对应实物磁带的印刷贴纸）。"""
         s = self.skin
         lab = self.LABEL_RECT
-        p.setPen(QPen(QColor(200, 192, 174), 1.6))
-        p.setBrush(QColor("#f8f4e9"))
-        p.drawRoundedRect(lab, 9, 9)
-        p.setPen(QPen(QColor(0, 0, 0, 20), 1.0))          # 贴纸上的浅色印线
-        for i in (1, 3):
-            y = lab.top() + lab.height() * i / 4.0
-            p.drawLine(QPointF(lab.left() + 12, y), QPointF(lab.right() - 12, y))
+        # v1.1.0：白纸底 + 印线可整张换成 sticker 资源（封面/标题/副标题仍是程序画）
+        if s.has_asset("sticker"):
+            s.draw_asset(p, "sticker", lab)
+        else:
+            p.setPen(QPen(QColor(200, 192, 174), 1.6))
+            p.setBrush(QColor("#f8f4e9"))
+            p.drawRoundedRect(lab, 9, 9)
+            p.setPen(QPen(QColor(0, 0, 0, 20), 1.0))          # 贴纸上的浅色印线
+            for i in (1, 3):
+                y = lab.top() + lab.height() * i / 4.0
+                p.drawLine(QPointF(lab.left() + 12, y), QPointF(lab.right() - 12, y))
 
         # 封面（居中偏上）
         cs = self.COVER_SIZE
@@ -879,6 +883,17 @@ class DeckWidget(QWidget):
         dragging = self._drag_frac is not None
         frac = clamp01(self._drag_frac if dragging else a.progress)
 
+        # v1.1.0：轨道/填充/滑块都能换图。填充按比例裁剪（图 = 满值），滑块按位置平移。
+        s = self.skin
+        if s.has_asset("prog_track"):
+            s.draw_asset(p, "prog_track", QRectF(tr).adjusted(-1.5, -1.5, 1.5, 1.5))
+            inner = QRectF(tr.left() + 1, tr.top() + 1, tr.width() - 2, tr.height() - 2)
+            s.draw_clipped(p, "prog_fill", inner, frac)
+            kr = 7.0 if dragging else 5.5
+            tcx, tcy = tr.left() + tr.width() * frac, tr.center().y()
+            s.draw_asset(p, "prog_thumb", QRectF(tcx - kr, tcy - kr, kr * 2, kr * 2))
+            return
+
         p.setPen(Qt.NoPen)
         p.setBrush(QColor(10, 14, 18, 240))                        # 凹槽
         p.drawRoundedRect(tr.adjusted(-1.5, -1.5, 1.5, 1.5), 5.5, 5.5)
@@ -963,9 +978,13 @@ class DeckWidget(QWidget):
     def _paint_lcd(self, p):
         """底部标签条（型号字样）+ 计数器 LCD。"""
         s = self.skin
-        p.setPen(QPen(QColor(200, 192, 174), 1.4))
-        p.setBrush(QColor("#f8f4e9"))
-        p.drawRoundedRect(self.STRIP_RECT, 7, 7)
+        # v1.1.0：标签条与计数窗底都能换图；型号文字与时间数字仍是程序绘制
+        if s.has_asset("lcd_strip"):
+            s.draw_asset(p, "lcd_strip", QRectF(self.STRIP_RECT))
+        else:
+            p.setPen(QPen(QColor(200, 192, 174), 1.4))
+            p.setBrush(QColor("#f8f4e9"))
+            p.drawRoundedRect(self.STRIP_RECT, 7, 7)
         f0 = QFont()
         f0.setPointSizeF(9.0)
         f0.setBold(True)
@@ -977,9 +996,12 @@ class DeckWidget(QWidget):
                    Qt.AlignRight | Qt.AlignVCenter, "HiFi")
 
         lcd = self.LCD_RECT
-        p.setPen(QPen(QColor(52, 62, 54), 1.4))
-        p.setBrush(s.color("lcd_bg"))
-        p.drawRoundedRect(lcd, 5, 5)
+        if s.has_asset("lcd_bg"):
+            s.draw_asset(p, "lcd_bg", QRectF(lcd))
+        else:
+            p.setPen(QPen(QColor(52, 62, 54), 1.4))
+            p.setBrush(s.color("lcd_bg"))
+            p.drawRoundedRect(lcd, 5, 5)
         f3 = QFont("Courier New")
         f3.setPointSizeF(9.5)
         f3.setBold(True)

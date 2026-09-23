@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="126" height="6" viewBox="0 0 126 6">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f4d27c"/>
+      <stop offset="0.5" stop-color="#dfae44"/>
+      <stop offset="1" stop-color="#b8862a"/>
+    </linearGradient>
+  </defs>
+  <!-- 图 = 满值状态；程序按比例从左向右裁剪 -->
+  <rect x="0" y="0" width="126" height="6" rx="3" fill="url(#g)"/>
+</svg>
