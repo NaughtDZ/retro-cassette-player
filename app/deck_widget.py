@@ -857,7 +857,15 @@ class DeckWidget(QWidget):
                    QPointF(self.HUB_X - coils[1][1] + 3, self.HUB_Y + 15))
 
         # 磁带卷：卷芯半径固定，卷厚随进度变化（左盘收带变厚、右盘放带变薄）
+        # v1.1.0：卷可换成 reel_coil 资源（图 = **满卷**，画布中心即转轴），程序按当前
+        # 半径整体缩放；卷芯在下面紧接着绘制、会盖住内圈，所以缩放不会露出内径偏差。
+        s = self.skin
         for hx, coil, _ang in coils:
+            if s.has_asset("reel_coil"):
+                full = QRectF(hx - a.COIL_MAX, self.HUB_Y - a.COIL_MAX,
+                              a.COIL_MAX * 2.0, a.COIL_MAX * 2.0)
+                s.draw_scaled(p, "reel_coil", full, coil / a.COIL_MAX)
+                continue
             path = QPainterPath()
             path.addEllipse(QPointF(hx, self.HUB_Y), coil, coil)
             path.addEllipse(QPointF(hx, self.HUB_Y), hub_r - 1.0, hub_r - 1.0)

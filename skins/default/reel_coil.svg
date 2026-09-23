@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="92" height="92" viewBox="0 0 92 92">
+  <defs>
+    <radialGradient id="t" cx="42%" cy="34%" r="72%">
+      <stop offset="0" stop-color="#6a5241"/>
+      <stop offset="0.6" stop-color="#4e3b2c"/>
+      <stop offset="1" stop-color="#3b2c21"/>
+    </radialGradient>
+  </defs>
+  <!-- 图 = 满卷状态；程序按当前半径缩放（内圈会被卷芯盖住） -->
+  <path fill-rule="evenodd" fill="url(#t)" d="M 46.00 0.00 A 46.00 46.00 0 1 1 46.00 92.00 A 46.00 46.00 0 1 1 46.00 0.00 Z M 46.00 21.00 A 25.00 25.00 0 1 1 46.00 71.00 A 25.00 25.00 0 1 1 46.00 21.00 Z"/>
+  <path d="M 70.95 10.37 A 43.50 43.50 0 0 0 21.05 10.37" fill="none" stroke="#6b5140" stroke-width="2" stroke-linecap="round" opacity="0.75"/>
+</svg>

@@ -144,6 +144,7 @@
     "prog_fill": "prog_fill.svg",
     "prog_thumb": "prog_thumb.svg",
     "lcd_strip": "lcd_strip.svg",
-    "lcd_bg": "lcd_bg.svg"
+    "lcd_bg": "lcd_bg.svg",
+    "reel_coil": "reel_coil.svg"
   }
 }

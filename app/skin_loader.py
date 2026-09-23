@@ -179,7 +179,8 @@ class Skin:
                     size = QSize(int(rect.width()), int(rect.height()))
                     p.drawPixmap(QPointF(rect.left(), rect.top()), self._asset_pixmap(key, size))
                 else:
-                    pm = obj.scaled(rect.size(), 1, 2)   # KeepAspectRatio + Smooth
+                    # 同样只认枚举（int 会 TypeError）
+                    pm = obj.scaled(rect.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
                     x = rect.x() + (rect.width() - pm.width()) // 2
                     y = rect.y() + (rect.height() - pm.height()) // 2
                     p.drawPixmap(x, y, pm)
@@ -223,41 +224,58 @@ class Skin:
         size = QSize(max(1, int(rect.width())), max(1, int(rect.height())))
         if a[0] == "svg":
             return self._asset_pixmap(key, size)
-        return a[1].scaled(size, 1, 2)
+        # PySide6 的 scaled() 只认枚举，传 1/2 这类整数会直接抛 TypeError
+        return a[1].scaled(size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
 
     def draw_rotated(self, p, key, rect, angle_deg, fallback=None):
         """把资源绕**图片中心**旋转后绘制（旋钮指针 / VU 指针）。
 
         约定：指针图按 0° 画成"朝上"，中心即转轴；程序按数值换算角度。
         """
-        pm = self._part_pixmap(key, rect)
+        try:
+            pm = self._part_pixmap(key, rect)
+        except Exception as e:
+            print(f"[skin] 旋转资源 {key} 失败：{e}")
+            pm = None
         if pm is None:
             if fallback is not None:
                 fallback(p)
             return False
         c = QPointF(rect.center())
         p.save()
-        p.translate(c)
-        p.rotate(float(angle_deg))
-        p.drawPixmap(QPointF(-pm.width() / 2.0, -pm.height() / 2.0), pm)
-        p.restore()
+        try:
+            p.translate(c)
+            p.rotate(float(angle_deg))
+            p.drawPixmap(QPointF(-pm.width() / 2.0, -pm.height() / 2.0), pm)
+        finally:
+            p.restore()
         return True
 
     def draw_scaled(self, p, key, rect, scale, fallback=None):
         """按比例缩放绘制、中心对齐（磁带卷径随进度；约定图 = 最大状态）。"""
-        pm = self._part_pixmap(key, rect)
+        try:
+            pm = self._part_pixmap(key, rect)
+        except Exception as e:
+            print(f"[skin] 缩放资源 {key} 失败：{e}")
+            pm = None
         if pm is None or scale <= 0:
             if fallback is not None:
                 fallback(p)
             return False
-        w, h = pm.width() * float(scale), pm.height() * float(scale)
-        p.drawPixmap(QPointF(rect.center().x() - w / 2.0, rect.center().y() - h / 2.0),
-                     pm.scaled(int(max(1, w)), int(max(1, h)), 1, 2))
+        w = int(max(1, round(pm.width() * float(scale))))
+        h = int(max(1, round(pm.height() * float(scale))))
+        pm2 = pm.scaled(w, h, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        p.drawPixmap(QPointF(rect.center().x() - pm2.width() / 2.0,
+                             rect.center().y() - pm2.height() / 2.0), pm2)
         return True
 
     def draw_clipped(self, p, key, rect, frac, fallback=None):
         """按水平比例裁剪绘制（进度条填充；约定图 = 满值状态，从左向右露出）。"""
-        pm = self._part_pixmap(key, rect)
+        try:
+            pm = self._part_pixmap(key, rect)
+        except Exception as e:
+            print(f"[skin] 裁剪资源 {key} 失败：{e}")
+            pm = None
         if pm is None:
             if fallback is not None:
                 fallback(p)
