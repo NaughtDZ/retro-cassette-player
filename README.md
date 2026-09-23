@@ -235,8 +235,13 @@ tests/verify_playlist_io.py  播放列表读写自检（M3U8 往返 + 会话恢�
 .\.venv\Scripts\python.exe tests\verify_playlist_io.py     # M3U8 往返 / 会话恢复
 .\.venv\Scripts\python.exe tests\verify_session.py         # 会话兼容与按需探测
 .\.venv\Scripts\python.exe tests\verify_tape_fx.py         # 磁带 DSP：加载 / PCM 往返 / 参数 / POWER
+.\.venv\Scripts\python.exe tests\verify_tape_params.py     # 逐个参数扫描：谁有效、谁会把输出搞坏
+.\.venv\Scripts\python.exe tests\verify_fx_latency.py      # 实测"改参数 → 生效"的延迟
 .\.venv\Scripts\python.exe tests\bench_frames.py           # 帧耗时基准
 ```
+
+以上脚本都**静音运行**（offscreen + `RETRO_MUTE=1`，强制不打开音频输出设备），
+不会在调试时把声音送到耳机。手动调试时也可以自己设 `RETRO_MUTE=1` 达到同样效果。
 
 三个验证脚本都会先把用户的 `.cache\session.json` 挪走、结束时（含断言失败）原样放回，不会动你的播放列表。
 

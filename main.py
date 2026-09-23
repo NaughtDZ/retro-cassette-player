@@ -306,6 +306,12 @@ class PlayerApp:
     # ---------------- 磁带 console ----------------
     def on_console_param(self, name, value):
         self.engine.set_tape_param(name, value)
+        if name == "bias":
+            # 自动校准开启时 DSP 会用"按机型/带速算出的偏磁"覆盖手动值，
+            # 所以用户一拧偏磁就切到手动档，并且让面板上的 AUTO CAL 跟着变。
+            self.engine.set_tape_param("auto_cal", 0.0)
+            tp = self.engine.tape_params()
+            self.console_win.set_values({"auto_cal": tp.get("auto_cal", 0.0)})
 
     def toggle_console(self):
         """在磁带机旁显示/隐藏 console 面板（屏幕放不下就翻到另一侧）。"""

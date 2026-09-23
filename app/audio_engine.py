@@ -24,9 +24,9 @@ CHANNELS = 2
 BITS = 16
 BYTES_PER_SEC = SAMPLE_RATE * CHANNELS * (BITS // 8)   # 384000 B/s
 CHUNK = 8192
-BUFFER_CAP_SECONDS = 8          # 解码前瞻上限（超过则读取线程等待消费）
+BUFFER_CAP_SECONDS = 3          # 解码前瞻上限（超过则读取线程等待消费）
 MAX_TICK_SECONDS = 0.25         # 单次 tick 最多折算的实时量，防止卡顿后一次性猛拉
-LOOKAHEAD_SECONDS = 0.18        # 设备模式允许的额外前瞻，保证不欠载又不超前太多
+LOOKAHEAD_SECONDS = 0.12        # 设备模式允许的额外前瞻，保证不欠载又不超前太多
 
 
 def find_ffmpeg(explicit_dir=None):
@@ -82,10 +82,16 @@ class AudioEngine(QObject):
         fmt.setChannelCount(CHANNELS)
         # Qt6.11 绑定：位宽经 setSampleFormat 指定（无 setSampleSize / setSampleType）
         fmt.setSampleFormat(QAudioFormat.SampleFormat.Int16)
-        try:
-            self._sink = QAudioSink(fmt, self)
-        except Exception:
-            self._sink = None         # 无音频设备（如 offscreen）时降级为虚拟实时播放
+        # 调试静音：设了 RETRO_MUTE=1 就完全不打开输出设备（走虚拟实时，绝不出声）
+        silent = bool(os.environ.get("RETRO_MUTE"))
+        if silent:
+            self._sink = None
+            print("[audio] RETRO_MUTE 已开启：不打开音频输出设备（静音调试）")
+        else:
+            try:
+                self._sink = QAudioSink(fmt, self)
+            except Exception:
+                self._sink = None         # 无音频设备（如 offscreen）时降级为虚拟实时播放
         self._device = None           # Qt6.11：start() 返回的 QIODevice，数据经它写入
         self._sink_failed = False
         self._starved = 0             # 设备连续拒收次数
@@ -137,12 +143,6 @@ class AudioEngine(QObject):
                 data = proc.stdout.read(CHUNK)
                 if not data:
                     break
-                if self.tape_fx.available:
-                    # 只把"完整帧"交给 DSP：管道 read 可能返回非 4 字节整数倍，
-                    # 直接按 len//4 处理会把声道错位、污染后面整条流。
-                    aligned = len(data) - (len(data) % 4)
-                    if aligned:
-                        data = self.tape_fx.process(data[:aligned]) + data[aligned:]
                 with self._lock:
                     self._buf.append(data)
                     self._decoded += len(data)
@@ -283,6 +283,9 @@ class AudioEngine(QObject):
                     data += chunk[:remaining]
                     self._buf.appendleft(chunk[remaining:])
         if data:
+            # 磁带染色放在**投递前**（而不是解码线程里）：解码前瞻能有好几秒，
+            # 若在那里处理，用户拧旋钮要等缓冲播完才听得到变化——表现为"特效起效延时极高"。
+            data = self._apply_tape_fx(data)
             if dev is not None:
                 try:
                     dev.write(QByteArray(bytes(data)))
@@ -291,6 +294,20 @@ class AudioEngine(QObject):
             with self._lock:
                 self._consumed += len(data)     # 以实际提交量计位置
         self._check_eof()
+
+    def _apply_tape_fx(self, data: bytearray) -> bytearray:
+        """在投递前过一遍磁带 DSP（参数改动最多一个投递周期就听得到）。
+
+        只把"完整帧"交给 DSP：管道/缓冲切分不保证 4 字节整数倍，直接按 len//4
+        处理会把声道错位、污染后面整条流（听感就是刺耳的沙沙声）。
+        """
+        if not self.tape_fx.available:
+            return data
+        raw = bytes(data)
+        aligned = len(raw) - (len(raw) % 4)
+        if not aligned:
+            return data
+        return bytearray(self.tape_fx.process(raw[:aligned]) + raw[aligned:])
 
     def _check_eof(self):
         if not (self._eof_pending and self.path and self.playing):

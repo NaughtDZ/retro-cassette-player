@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import ctypes
 import os
+import time
 
 # ---- 参数 id：必须与 third_party/dusk_ctm/dusk_dsp_shim.cpp 的枚举逐项一致 ----
 PARAMS = {
@@ -36,10 +37,13 @@ INFO_LATENCY = 200
 DEFAULTS = {
     "active": 1.0,
     "machine": 0.0, "speed": 1.0, "type": 1.0, "signal_path": 0.0, "eq_standard": 0.0,
-    "input_gain_db": 0.0, "bias": 0.0, "calibration": 0.0, "auto_cal": 1.0,
+    # bias 是 0..1 的归一化偏磁量（0.5 = 中性）：core 内部按 (biasAmount - 0.5) 计算，
+    # 而且只有 auto_cal 关闭（手动校准）时它才真正起作用。
+    "input_gain_db": 0.0, "bias": 0.5, "calibration": 0.0, "auto_cal": 1.0,
     "highpass_hz": 20.0, "lowpass_hz": 20000.0,
     "noise": 0.0, "wow": 0.0, "flutter": 0.0,
-    "output_gain_db": 0.0, "auto_comp": 1.0, "oversampling": 1.0, "head_width": 0.0,
+    "output_gain_db": 0.0, "auto_comp": 1.0, "oversampling": 1.0,
+    "head_width": 1.0,            # core 默认 1（1/2 英寸）；且仅 American 机型下有效
     "crosstalk": 0.0, "wowflutter_on": 1.0, "transformer": 1.0,
     "repro_lf": 0.0, "repro_lmf": 0.0, "repro_hmf": 0.0, "repro_hf": 0.0, "repro_sub": 0.0,
     "level_hmf_trim": 0.0, "level_hf_trim": 0.0, "lp_q": 0.707, "bypass": 0.0,
@@ -49,7 +53,7 @@ DEFAULTS = {
 PARAM_SPEC = {
     "input_gain_db":  ("输入增益", -24.0, 24.0, 0.5, False, "dB"),
     "output_gain_db": ("输出增益", -24.0, 24.0, 0.5, False, "dB"),
-    "bias":           ("偏磁", -1.0, 1.0, 0.01, False, ""),
+    "bias":           ("偏磁", 0.0, 1.0, 0.01, False, ""),   # 0..1，0.5 中性（需关 AUTO CAL 才生效）
     "noise":          ("磁带噪声", 0.0, 100.0, 1.0, False, "%"),
     "wow":            ("抖晃 Wow", 0.0, 100.0, 1.0, False, "%"),
     "flutter":        ("抖动 Flutter", 0.0, 100.0, 1.0, False, "%"),
@@ -79,7 +83,7 @@ ENUMS = {
 # 这不是 DSP 内的 bypass（core 只有整体 bypass），而是参数域上的等效做法：
 # input 的增益/偏置归零、transport 的抖晃噪声归零、output 的增益补偿归零、重放 EQ 全平。
 MODULE_NEUTRAL = {
-    "input":     {"input_gain_db": 0.0, "bias": 0.0, "highpass_hz": 20.0, "lowpass_hz": 20000.0},
+    "input":     {"input_gain_db": 0.0, "bias": 0.5, "highpass_hz": 20.0, "lowpass_hz": 20000.0},
     "transport": {"wow": 0.0, "flutter": 0.0, "noise": 0.0, "wowflutter_on": 0.0},
     "output":    {"output_gain_db": 0.0, "auto_comp": 0.0},
     "repro_eq":  {"repro_lf": 0.0, "repro_lmf": 0.0, "repro_hmf": 0.0,
@@ -109,6 +113,9 @@ class TapeFx:
         self.params = dict(DEFAULTS)
         self.modules = {k: True for k in MODULE_NEUTRAL}   # 分区开关状态
         self._module_saved = {}                            # 分区关闭时记住的用户值
+        self._glitches = 0                                 # DSP 输出异常次数（写日志用）
+        self._pending_set_t = 0.0                          # 最近一次参数变更时刻（探针）
+        self.set_to_process_ms = 0.0                       # 实测：变更到下一次处理的毫秒数
         self._np = _try_numpy()
         self._dll = None
         self._handle = None
@@ -198,6 +205,7 @@ class TapeFx:
         self.params[name] = float(value)
         if self.available:
             self._apply(name, value)
+        self._pending_set_t = time.monotonic()      # 探针：量"改动 → 下一次真正生效"的延迟
 
     def set_many(self, mapping):
         for k, v in (mapping or {}).items():
@@ -264,6 +272,9 @@ class TapeFx:
         """交错 s16le 进、交错 s16le 出；不可用或未启用时原样返回。"""
         if not self.available or len(data) < 8:
             return data
+        if self._pending_set_t:
+            self.set_to_process_ms = (time.monotonic() - self._pending_set_t) * 1000.0
+            self._pending_set_t = 0.0
         if self.params.get("active", 1.0) <= 0.5:
             return data
         np = self._np
@@ -280,5 +291,12 @@ class TapeFx:
         except Exception as e:
             print(f"[tape_fx] process 失败，后续直通：{e}")
             self.available = False
+            return data
+        # 输出保护：非有限值或异常爆表一律退回原始 PCM——宁可没有染色，
+        # 也绝不让 NaN / 巨大噪声传到耳朵里。
+        if not np.isfinite(dst).all() or float(np.abs(dst).max()) > 4.0:
+            self._glitches += 1
+            if self._glitches in (1, 10, 100):
+                print(f"[tape_fx] DSP 输出异常（第 {self._glitches} 次），已退回原始音频")
             return data
         return (np.clip(dst, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()

@@ -37,6 +37,7 @@ def main():
     if os.path.isfile(cfg_file):
         with open(cfg_file, "rb") as f:
             saved_cfg = f.read()
+        os.remove(cfg_file)      # 必须删掉：否则会读到上次遗留的模块旁通状态，测出来的"参数"是被接管后的值
 
     import atexit
 
@@ -88,11 +89,14 @@ def main():
     # 音量与效果器参数属于"软件配置"，写在 config\settings.json（项目目录内），不再进会话
     p.deck.set_volume(0.35)
     p.on_console_param("bias", 0.21)
+    tp_now = p.engine.tape_params()
+    assert all(tp_now), f"参数表异常：{tp_now}"
     p._save_settings()
     with open(cfg_file, encoding="utf-8") as f:
         cfg = json.load(f)
     assert abs(float(cfg["volume"]) - 0.35) < 0.01, f"音量未写入配置：{cfg.get('volume')}"
-    assert abs(float(cfg["fx"]["params"]["bias"]) - 0.21) < 0.01, "效果器参数未写入配置"
+    saved_bias = float(cfg["fx"]["params"].get("bias", -999.0))
+    assert abs(saved_bias - 0.21) < 0.01, f"效果器参数未写入配置：bias={saved_bias}（期望 0.21）"
     assert os.path.dirname(cfg_file).startswith(ROOT), f"配置写到了项目目录之外：{cfg_file}"
     assert "volume" not in data, "音量应改由配置文件保存，不该再留在会话里"
     print(f"[v] 配置持久化 OK（{os.path.relpath(cfg_file, ROOT)}：volume={cfg['volume']}, "

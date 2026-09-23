@@ -38,6 +38,7 @@ ZONES = [
         ("speed", "SPEED", "switch", ""),
         ("type", "TAPE", "switch", ""),
         ("calibration", "CAL", "switch", "dB"),
+        ("auto_cal", "AUTO CAL", "switch", ""),
     ]),
     ("TRANSPORT 走带", [
         ("wow", "WOW", "knob", "%"),
@@ -63,6 +64,7 @@ ZONES = [
 
 SWITCH_LABELS = {
     "auto_comp": ["关", "开"],
+    "auto_cal": ["手动", "自动"],
     "wowflutter_on": ["关", "开"],
     "active": ["关", "开"],
     "calibration": ["+6", "+3", "0", "-3"],
