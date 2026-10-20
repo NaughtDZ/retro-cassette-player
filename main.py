@@ -18,6 +18,7 @@ from PySide6.QtWidgets import QApplication, QFileDialog, QMenu, QMessageBox
 
 from app.audio_engine import AudioEngine, find_ffmpeg
 from app.console_window import ConsoleWindow
+from app.lyric_window import LyricWindow
 from app.deck_widget import DeckWidget
 from app import settings as settings_mod
 from app.media_info import CoverWorker, ProbeWorker, scan_folder
@@ -59,6 +60,8 @@ class PlayerApp:
         self.pl_win = PlaylistWindow(self._make_skin())
         # 磁带 console 悬浮窗：按底座按钮呼出（默认隐藏）
         self.console_win = ConsoleWindow(self.deck.skin, self.engine.tape_params())
+        # 悬浮歌词窗：歌词来自同目录同名 .lrc；conf 由 settings["lyric"] 持久化
+        self.lyric_win = LyricWindow(self.settings.get("lyric"), on_change=self._on_lyric_change)
         self.console_win.param_changed.connect(self.on_console_param)
         self.console_win.module_toggled.connect(self.engine.set_tape_module)
         self.console_win.power_toggled.connect(self.engine.set_tape_power)
@@ -131,6 +134,41 @@ class PlayerApp:
             self.pl_win.setWindowFlags(self.pl_win.windowFlags() | Qt.WindowStaysOnTopHint)
             self.pl_win.show() if w.get("playlist_visible") else self.pl_win.hide()
 
+        # 歌词窗：恢复样式、位置、可见性（首次运行不显示）
+        ly = s.get("lyric") or {}
+        self.lyric_win.apply(ly)
+        if ly.get("pos"):
+            try:
+                self.lyric_win.move(int(ly["pos"][0]), int(ly["pos"][1]))
+            except (TypeError, ValueError, IndexError):
+                pass
+        if ly.get("enabled"):
+            self._sync_lyric_track()
+            self.lyric_win.show()
+
+    # ---------------- 悬浮歌词 ----------------
+    def _sync_lyric_track(self):
+        """把当前曲目交给歌词窗（会嗅探目录里的字幕；切歌时也走这里）。"""
+        cur = self.model.current
+        if 0 <= cur < len(self.model.tracks):
+            t = self.model.tracks[cur]
+            self.lyric_win.set_track(t.path, t.title)
+        else:
+            self.lyric_win.set_track(None)
+
+    def _on_lyric_change(self, conf):
+        """歌词窗自身改动（拖动/缩放/右键菜单）后立刻落盘，避免非正常退出丢设置。"""
+        self.settings["lyric"] = dict(conf or {})
+        settings_mod.save(self.root, self.settings)
+
+    def _toggle_lyric(self, on):
+        self.lyric_win.set_conf(enabled=bool(on))
+        if on:
+            self._sync_lyric_track()
+            self.lyric_win.show()
+        else:
+            self.lyric_win.hide()
+
     def _save_settings(self):
         """退出时把音量、皮肤、效果器参数与开关、窗口位置写进配置文件。"""
         s = dict(self.settings)
@@ -149,6 +187,7 @@ class PlayerApp:
             "playlist_topmost": bool(self.pl_win.windowFlags() & Qt.WindowStaysOnTopHint),
             "playlist_visible": bool(self.pl_win.isVisible()),
         }
+        s["lyric"] = dict(self.lyric_win.snapshot() or {})
         if settings_mod.save(self.root, s):
             print(f"[config] 已保存到 {settings_mod.config_path(self.root)}")
 
@@ -438,6 +477,7 @@ class PlayerApp:
         sub = " · ".join(x for x in (t.artist, t.album) if x)
         self.deck.set_labels(t.title, sub)
         self._cover_for(t.path)
+        self.lyric_win.set_track(t.path, t.title)   # 换歌就重新嗅探字幕
         for j in (idx - 1, idx + 1):          # 预热相邻曲目封面缓存
             if 0 <= j < n and j != idx:
                 self._cover_for(self.model.tracks[j].path)
@@ -459,6 +499,7 @@ class PlayerApp:
 
     def on_position(self, pos):
         cur = self.model.current
+        self.lyric_win.set_position(pos)      # 歌词按播放位置滚动
         if 0 <= cur < len(self.model.tracks):
             self.deck.set_progress(pos, self.model.tracks[cur].duration)
 
@@ -580,6 +621,9 @@ class PlayerApp:
         act_top = menu.addAction("播放列表窗口置顶")
         act_top.setCheckable(True)
         act_top.setChecked(topmost)
+        act_lyric = menu.addAction("悬浮歌词")
+        act_lyric.setCheckable(True)
+        act_lyric.setChecked(self.lyric_win.isVisible())
         act_about = menu.addAction("关于")
 
         def do_open_files():
@@ -599,6 +643,7 @@ class PlayerApp:
         act_pl_open.triggered.connect(self.open_playlist_file)
         act_pl_save.triggered.connect(self.save_playlist_file)
         act_top.triggered.connect(lambda: self._toggle_pl_topmost())
+        act_lyric.triggered.connect(lambda checked: self._toggle_lyric(checked))
         act_about.triggered.connect(
             lambda: QMessageBox.about(self.deck_win, "复古磁带播放器",
                                       "复古磁带播放器 v1.0\n底层：ffmpeg 解码 · PySide6 矢量界面\n皮肤包目录：skins\\"))
