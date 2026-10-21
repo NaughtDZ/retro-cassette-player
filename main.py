@@ -733,7 +733,10 @@ class PlayerApp:
         act_lyr_through.triggered.connect(lambda checked: self._toggle_lyric_transparent(checked))
         act_about.triggered.connect(
             lambda: QMessageBox.about(self.deck_win, "复古磁带播放器",
-                                      "复古磁带播放器 v1.0\n底层：ffmpeg 解码 · PySide6 矢量界面\n皮肤包目录：skins\\"))
+                                      "复古磁带播放器 v1.2.0\n"
+                                      "底层：ffmpeg 解码 · PySide6 矢量界面 · Dusk TapeMachine DSP\n"
+                                      "皮肤包目录：skins\\\n"
+                                      "字幕：音频同目录的 .lrc / .srt / .vtt / .ass / .ssa"))
 
         menu.exec(pos)
 

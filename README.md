@@ -1,6 +1,6 @@
 # 复古磁带播放器（Retro Cassette Player）
 
-**v1.1.0** · Python + PySide6 · 全矢量界面 · 自带静态 ffmpeg
+**v1.2.0** · Python + PySide6 · 全矢量界面 · 自带静态 ffmpeg
 
 ![主界面](docs/images/hero.png)
 
