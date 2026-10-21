@@ -213,6 +213,8 @@ DEFAULTS = {
     "image_path": "",
     "image_fit": "crop",        # crop | stretch | fit
     "locked": False,
+    "transparent": False,       # 鼠标穿透：只能看不能碰，解除要到主程序菜单
+    "manual": {},               # {音频路径: 手动指定的字幕路径}
     "pos": None,                # [x, y]
     "size": None,               # [w, h]
     "topmost": True,
@@ -265,12 +267,27 @@ class LyricWindow(QWidget):
 
     # ---------------- 对外接口 ----------------
     def set_track(self, audio_path, title=None):
-        """切歌时调用：在音频目录里嗅探字幕（LRC/SRT/VTT/ASS/SSA）并解析。"""
-        self.subtitle_path = find_subtitle(audio_path, title)
+        """切歌时调用：优先用手动指定的字幕，否则在音频目录里嗅探。"""
+        manual = (self.conf.get("manual") or {}).get(audio_path or "")
+        if manual and os.path.isfile(manual):
+            self.subtitle_path = manual
+        else:
+            self.subtitle_path = find_subtitle(audio_path, title)
         self.lines = parse_subtitle(self.subtitle_path) if self.subtitle_path else []
         self._idx = -1
         self._scroll = 0.0
         self.update()
+
+    def set_manual_subtitle(self, audio_path, sub_path):
+        """手动指定某首歌的字幕（存进 conf["manual"]，每首单独记）。"""
+        m = dict(self.conf.get("manual") or {})
+        if sub_path:
+            m[audio_path] = sub_path
+        else:
+            m.pop(audio_path, None)
+        self.conf["manual"] = m
+        self._emit()
+        self.set_track(audio_path)
 
     def set_position(self, sec):
         self._pos = max(0.0, float(sec or 0.0))
@@ -317,9 +334,17 @@ class LyricWindow(QWidget):
         return c
 
     def _apply_flags(self):
-        top = bool(self.conf.get("topmost", True))
+        """重建窗口标志：置顶 + **鼠标穿透**。
+
+        穿透用 Qt 自己的 ``WindowTransparentForInput``（等价 WS_EX_TRANSPARENT|WS_EX_LAYERED），
+        不需要 ctypes。开了之后窗口收不到任何鼠标事件——**连右键菜单都用不了**，
+        所以解除只能从主程序菜单来，这正是需求要求的方式。
+        """
         want = Qt.FramelessWindowHint | Qt.Tool
-        want |= (Qt.WindowStaysOnTopHint if top else Qt.WindowType(0))
+        if self.conf.get("topmost", True):
+            want |= Qt.WindowStaysOnTopHint
+        if self.conf.get("transparent"):
+            want |= Qt.WindowTransparentForInput
         if self.windowFlags() != want:
             was = self.isVisible()
             self.setWindowFlags(want)

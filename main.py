@@ -3,6 +3,7 @@
 运行：.venv\\Scripts\\python main.py   （或双击 run.bat）
 """
 import os
+import subprocess
 import sys
 import time
 
@@ -87,6 +88,12 @@ class PlayerApp:
         self.model.changed.connect(lambda: self.pl_win.rebuild(self.model.tracks, self.model.current))
         self.model.current_changed.connect(self.pl_win.set_current)   # 切歌只重绘列表两行
         self.pl_win.play_requested.connect(self._play_index)
+        # 播放列表：拖入文件 / 拖动排序 / 行右键三项
+        self.pl_win.files_dropped.connect(self.add_files)
+        self.pl_win.reorder_requested.connect(self.on_playlist_reorder)
+        self.pl_win.props_requested.connect(self.on_track_props)
+        self.pl_win.open_folder_requested.connect(self.on_track_folder)
+        self.pl_win.pick_subtitle_requested.connect(self.on_track_subtitle)
         self.deck._anim.swap_requested.connect(self._on_swap_fired)
 
         # ---------------- 初始布局：磁带机居中，练习册在右侧 ----------------
@@ -168,6 +175,61 @@ class PlayerApp:
             self.lyric_win.show()
         else:
             self.lyric_win.hide()
+
+    def _toggle_lyric_transparent(self, on):
+        """鼠标穿透：开了之后歌词窗收不到鼠标事件，只能从本菜单关掉。"""
+        self.lyric_win.set_conf(transparent=bool(on))
+
+    # ---------------- 播放列表：排序与行操作 ----------------
+    def on_playlist_reorder(self, src, dst):
+        if self.model.move_track(src, dst):
+            self.pl_win.rebuild(self.model.tracks, self.model.current)
+
+    def on_track_props(self, row):
+        if not (0 <= row < len(self.model.tracks)):
+            return
+        t = self.model.tracks[row]
+        try:
+            size = os.path.getsize(t.path)
+        except OSError:
+            size = 0
+        ext = os.path.splitext(t.path)[1].lower().lstrip(".")
+        dur = float(t.duration or 0.0)
+        info = [
+            f"标题：{t.title}",
+            f"艺术家：{t.artist or '—'}",
+            f"专辑：{t.album or '—'}",
+            f"时长：{int(dur // 60)}:{int(dur % 60):02d}",
+            f"格式：{ext or '—'}",
+            f"大小：{size / 1048576:.2f} MB" if size else "大小：—",
+            "",
+            f"路径：\n{t.path}",
+        ]
+        QMessageBox.information(self.deck_win, "曲目属性", "\n".join(info))
+
+    def on_track_folder(self, row):
+        if not (0 <= row < len(self.model.tracks)):
+            return
+        p = os.path.normpath(self.model.tracks[row].path)
+        try:
+            if os.name == "nt":
+                subprocess.Popen(["explorer", "/select,", p])
+            else:
+                subprocess.Popen(["xdg-open", os.path.dirname(p)])
+        except OSError as e:
+            print(f"[playlist] 打开文件夹失败：{e}")
+
+    def on_track_subtitle(self, row):
+        if not (0 <= row < len(self.model.tracks)):
+            return
+        t = self.model.tracks[row]
+        p, _f = QFileDialog.getOpenFileName(
+            self.deck_win, "选择字幕文件", os.path.dirname(t.path),
+            "字幕 (*.lrc *.srt *.vtt *.ass *.ssa);;所有文件 (*)")
+        if p:
+            self.lyric_win.set_manual_subtitle(t.path, p)
+            if not self.lyric_win.isVisible():
+                self._toggle_lyric(True)
 
     def _save_settings(self):
         """退出时把音量、皮肤、效果器参数与开关、窗口位置写进配置文件。"""
@@ -624,6 +686,9 @@ class PlayerApp:
         act_lyric = menu.addAction("悬浮歌词")
         act_lyric.setCheckable(True)
         act_lyric.setChecked(self.lyric_win.isVisible())
+        act_lyr_through = menu.addAction("歌词窗鼠标穿透（只能在此解除）")
+        act_lyr_through.setCheckable(True)
+        act_lyr_through.setChecked(bool(self.lyric_win.conf.get("transparent")))
         act_about = menu.addAction("关于")
 
         def do_open_files():
@@ -644,6 +709,7 @@ class PlayerApp:
         act_pl_save.triggered.connect(self.save_playlist_file)
         act_top.triggered.connect(lambda: self._toggle_pl_topmost())
         act_lyric.triggered.connect(lambda checked: self._toggle_lyric(checked))
+        act_lyr_through.triggered.connect(lambda checked: self._toggle_lyric_transparent(checked))
         act_about.triggered.connect(
             lambda: QMessageBox.about(self.deck_win, "复古磁带播放器",
                                       "复古磁带播放器 v1.0\n底层：ffmpeg 解码 · PySide6 矢量界面\n皮肤包目录：skins\\"))

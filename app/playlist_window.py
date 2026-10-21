@@ -2,9 +2,11 @@
 
 对应参考图二：横向蓝色格线、纵向分栏、左侧双红线、行号 "1."，当前曲目用黄色荧光笔高亮。
 """
-from PySide6.QtCore import Qt, QRect, QRectF, QPointF, Signal
-from PySide6.QtGui import QPainter, QColor, QPen, QFont, QPainterPath
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QScrollArea
+import os
+
+from PySide6.QtCore import Qt, QRect, QRectF, QPointF, Signal, QMimeData
+from PySide6.QtGui import QPainter, QColor, QPen, QFont, QPainterPath, QDrag
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QScrollArea, QMenu
 
 from .shadow_window import ShadowWindow
 
@@ -98,6 +100,11 @@ class HeaderBar(QWidget):
 class SheetWidget(QWidget):
     """练习册纸面：格线 + 分栏 + 行号；双击某行播放该曲。"""
     play_requested = Signal(int)
+    files_dropped = Signal(list)              # 从资源管理器拖进来的音频
+    reorder_requested = Signal(int, int)       # 拖动排序：(源行, 插入到哪一行之前)
+    props_requested = Signal(int)
+    open_folder_requested = Signal(int)
+    pick_subtitle_requested = Signal(int)
 
     ROW_H = 30
     NUM_COL = 56          # 行号列宽
@@ -108,6 +115,10 @@ class SheetWidget(QWidget):
         self.skin = skin
         self.rows: list = []
         self.current = -1
+        self.setAcceptDrops(True)               # 接受从资源管理器拖进来的音频
+        self._press_row = None
+        self._press_pos = None
+        self._drop_at = None                    # 插入位置指示（行号，可为 len）
         self.setMinimumWidth(470)
         self._resize()
 
@@ -221,7 +232,94 @@ class SheetWidget(QWidget):
             p.setPen(TEXT_DIM if i != self.current else TEXT_MAIN)
             p.drawText(QRect(x_dur + 6, y, self.DUR_COL - 14, row_h),
                        Qt.AlignRight | Qt.AlignVCenter, self.fmt_dur(t.duration))
+        if self._drop_at is not None:            # 拖动排序的插入位置指示线
+            dy = min(self._drop_at * row_h, self.height() - 1)
+            p.setPen(QPen(QColor("#d43c31"), 2.0))
+            p.drawLine(26, dy, w - 4, dy)
         p.end()
+
+    # ---------------- 拖放 / 拖动排序 / 右键 ----------------
+    def _row_at(self, pos):
+        i = int(pos.y()) // self.ROW_H
+        return i if 0 <= i < len(self.rows) else -1
+
+    def _insert_at(self, pos):
+        i = int(pos.y()) // self.ROW_H
+        return max(0, min(len(self.rows), i + 1))
+
+    def dragEnterEvent(self, e):
+        md = e.mimeData()
+        if md.hasFormat("application/x-retro-row") or md.hasUrls():
+            e.acceptProposedAction()
+
+    def dragMoveEvent(self, e):
+        md = e.mimeData()
+        if md.hasFormat("application/x-retro-row") or md.hasUrls():
+            self._drop_at = self._insert_at(e.position())
+            self.update()
+            e.acceptProposedAction()
+
+    def dragLeaveEvent(self, e):
+        self._drop_at = None
+        self.update()
+
+    def dropEvent(self, e):
+        md = e.mimeData()
+        at, self._drop_at = self._drop_at, None
+        if md.hasFormat("application/x-retro-row"):
+            try:
+                src = int(bytes(md.data("application/x-retro-row")).decode() or -1)
+            except ValueError:
+                src = -1
+            self.reorder_requested.emit(src, at if at is not None else self._insert_at(e.position()))
+            self.update()
+            e.acceptProposedAction()
+            return
+        if md.hasUrls():
+            from .media_info import AUDIO_EXTS
+            files = [u.toLocalFile() for u in md.urls() if u.isLocalFile()]
+            files = [f for f in files if os.path.splitext(f)[1].lower() in AUDIO_EXTS]
+            if files:
+                self.files_dropped.emit(files)
+            e.acceptProposedAction()
+
+    def mousePressEvent(self, e):
+        if e.button() == Qt.LeftButton:
+            self._press_row = self._row_at(e.position())
+            self._press_pos = e.position().toPoint()
+        super().mousePressEvent(e)
+
+    def mouseMoveEvent(self, e):
+        if self._press_row is None or self._press_row < 0 or not (e.buttons() & Qt.LeftButton):
+            return
+        if (e.position().toPoint() - self._press_pos).manhattanLength() < 8:
+            return                          # 阈值：避免单击/双击被当成拖动
+        row, self._press_row = self._press_row, None
+        md = QMimeData()
+        md.setData("application/x-retro-row", str(row).encode())
+        drag = QDrag(self)
+        drag.setMimeData(md)
+        drag.exec(Qt.MoveAction)
+
+    def mouseReleaseEvent(self, e):
+        self._press_row = None
+        super().mouseReleaseEvent(e)
+
+    def contextMenuEvent(self, e):
+        row = self._row_at(e.pos())
+        if row < 0:
+            return
+        m = QMenu(self)
+        a_prop = m.addAction("查看属性…")
+        a_dir = m.addAction("打开所在文件夹")
+        a_sub = m.addAction("手动选择字幕…")
+        act = m.exec(e.globalPos())
+        if act == a_prop:
+            self.props_requested.emit(row)
+        elif act == a_dir:
+            self.open_folder_requested.emit(row)
+        elif act == a_sub:
+            self.pick_subtitle_requested.emit(row)
 
     def mouseDoubleClickEvent(self, ev):
         idx = int(ev.position().y() // self.ROW_H)
@@ -273,6 +371,11 @@ class PaperWidget(QWidget):
 class PlaylistWindow(ShadowWindow):
     """独立悬浮播放列表窗口（默认置顶）。"""
     play_requested = Signal(int)
+    files_dropped = Signal(list)
+    reorder_requested = Signal(int, int)
+    props_requested = Signal(int)
+    open_folder_requested = Signal(int)
+    pick_subtitle_requested = Signal(int)
 
     def __init__(self, skin=None, parent=None):
         super().__init__(margin=18, blur=30)
@@ -282,6 +385,12 @@ class PlaylistWindow(ShadowWindow):
         self.paper = PaperWidget(skin)
         self.add_content(self.paper)
         self.paper.sheet.play_requested.connect(self.play_requested)
+        # 拖放 / 排序 / 右键动作直接上抛给主程序处理
+        self.paper.sheet.files_dropped.connect(self.files_dropped)
+        self.paper.sheet.reorder_requested.connect(self.reorder_requested)
+        self.paper.sheet.props_requested.connect(self.props_requested)
+        self.paper.sheet.open_folder_requested.connect(self.open_folder_requested)
+        self.paper.sheet.pick_subtitle_requested.connect(self.pick_subtitle_requested)
         self.paper.header.close_clicked.connect(self.hide)
 
     def rebuild(self, tracks, current):

@@ -64,6 +64,32 @@ class PlaylistModel(QObject):
         if added:
             self.changed.emit()
 
+    def move_track(self, src, dst):
+        """把 src 处的曲目移到 dst 处（dst 是"插入到这份下标之前"，可为 len）。
+
+        返回是否真的动了。当前曲目的下标会跟着对应那一首走，不会跳歌。
+        """
+        n = len(self.tracks)
+        if not (0 <= src < n) or not (0 <= dst <= n):
+            return False
+        if src == dst or src + 1 == dst:
+            return False
+        t = self.tracks.pop(src)
+        if dst > src:
+            dst -= 1
+        dst = max(0, min(len(self.tracks), dst))
+        self.tracks.insert(dst, t)
+        cur = self.current
+        if cur >= 0:
+            if cur == src:
+                self.current = dst
+            elif src < cur <= dst:
+                self.current = cur - 1
+            elif dst <= cur < src:
+                self.current = cur + 1
+        self.changed.emit()
+        return True
+
     def apply_meta(self, path, meta):
         for t in self.tracks:
             if t.path == str(path):
