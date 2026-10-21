@@ -244,8 +244,16 @@ class SheetWidget(QWidget):
         return i if 0 <= i < len(self.rows) else -1
 
     def _insert_at(self, pos):
+        """由鼠标位置算出插入位置。
+
+        落在某行的**上半部** → 插到该行之前；**下半部** → 插到该行之后。
+        以前这里一律 +1（"插到这一行之后"），于是最小插入位置是 1，
+        **永远没法把曲目拖到第 1 位**——这就是"拖不到第一行"的原因。
+        """
         i = int(pos.y()) // self.ROW_H
-        return max(0, min(len(self.rows), i + 1))
+        frac = (pos.y() - i * self.ROW_H) / float(self.ROW_H)
+        at = i if frac < 0.5 else i + 1
+        return max(0, min(len(self.rows), at))
 
     def dragEnterEvent(self, e):
         md = e.mimeData()
