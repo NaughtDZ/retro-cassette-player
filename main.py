@@ -85,7 +85,7 @@ class PlayerApp:
         self._meter_timer.setInterval(90)
         self._meter_timer.timeout.connect(self._poll_meters)
         self._meter_timer.start()
-        self.model.changed.connect(lambda: self.pl_win.rebuild(self.model.tracks, self.model.current))
+        self.model.changed.connect(self._on_model_changed)
         self.model.current_changed.connect(self.pl_win.set_current)   # 切歌只重绘列表两行
         self.pl_win.play_requested.connect(self._play_index)
         # 播放列表：拖入文件 / 拖动排序 / 行右键三项
@@ -154,14 +154,31 @@ class PlayerApp:
             self.lyric_win.show()
 
     # ---------------- 悬浮歌词 ----------------
-    def _sync_lyric_track(self):
-        """把当前曲目交给歌词窗（会嗅探目录里的字幕；切歌时也走这里）。"""
+    def _sync_lyric_track(self, force=False):
+        """把当前曲目交给歌词窗（会嗅探目录里的字幕）。
+
+        同一首不重复扫描——目录里字幕多的时候，每次 changed 都扫一遍没有必要。
+        """
         cur = self.model.current
-        if 0 <= cur < len(self.model.tracks):
+        path = self.model.tracks[cur].path if 0 <= cur < len(self.model.tracks) else None
+        if not force and path == getattr(self, "_lyric_track_path", object()):
+            return
+        self._lyric_track_path = path
+        if path:
             t = self.model.tracks[cur]
-            self.lyric_win.set_track(t.path, t.title)
+            self.lyric_win.set_track(path, t.title)
         else:
             self.lyric_win.set_track(None)
+
+    def _rescan_subtitles(self):
+        """导入目录/音频、打开播放列表、启动恢复之后调用：重扫当前曲目的字幕。"""
+        self._lyric_track_path = object()      # 清掉去重标记，强制重新嗅探
+        self._sync_lyric_track(force=True)
+
+    def _on_model_changed(self):
+        """列表内容变了（导入/加文件/打开列表/重排）：重建列表并重扫字幕。"""
+        self.pl_win.rebuild(self.model.tracks, self.model.current)
+        self._sync_lyric_track()
 
     def _on_lyric_change(self, conf):
         """歌词窗自身改动（拖动/缩放/右键菜单）后立刻落盘，避免非正常退出丢设置。"""
@@ -320,6 +337,10 @@ class PlayerApp:
             self._preload(t, position)
         print(f"[session] 已恢复播放列表：{len(entries)} 首，模式 {mode}"
               f"（当前第 {cur + 1} 首，进度 {float(data.get('position') or 0.0):.1f}s）")
+        # 恢复完列表再同步字幕：_apply_settings 跑在 _restore_session 之前，
+        # 那时 model 还是空的，同步只会拿到 None。这里补一次（同一首会去重）。
+        self._sync_lyric_track(force=True)
+        self._rescan_subtitles()
 
     def _preload(self, track, position):
         """把上次的曲目与进度装进引擎但不发声：按下播放键即可从原处继续。
