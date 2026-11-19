@@ -90,6 +90,43 @@ class PlaylistModel(QObject):
         self.changed.emit()
         return True
 
+    def remove_indices(self, indices):
+        """把若干首从列表里拿掉（下标可乱序、可重复）。返回实际移除的首数。
+
+        当前曲目的处理：没被删就跟着下标前移；被删了就指到"原位置往后第一个幸存者"，
+        后面没有就退到前面最近的一个——这样删掉正在放的那首后，列表高亮停在自然的下一首，
+        不会突然跳到第 1 首。随机播放历史里的下标也会重映射，被删的那些直接丢掉。
+        """
+        n = len(self.tracks)
+        dead = {int(i) for i in indices if 0 <= int(i) < n}
+        if not dead:
+            return 0
+        remap, kept = {}, []
+        for i, t in enumerate(self.tracks):
+            if i in dead:
+                continue
+            remap[i] = len(kept)
+            kept.append(t)
+        cur = self.current
+        if cur < 0 or not kept:
+            new_cur = -1
+        elif cur in remap:
+            new_cur = remap[cur]
+        else:
+            after = [i for i in range(cur + 1, n) if i in remap]
+            before = [i for i in range(cur - 1, -1, -1) if i in remap]
+            if after:
+                new_cur = remap[after[0]]
+            elif before:
+                new_cur = remap[before[0]]
+            else:
+                new_cur = -1
+        self.tracks = kept
+        self.current = new_cur
+        self._shuffle_hist = [remap[h] for h in self._shuffle_hist if h in remap]
+        self.changed.emit()
+        return len(dead)
+
     def apply_meta(self, path, meta):
         for t in self.tracks:
             if t.path == str(path):

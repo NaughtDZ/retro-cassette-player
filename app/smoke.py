@@ -21,7 +21,7 @@ sys.path.insert(0, ROOT)
 
 def main():
     from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
-    from PySide6.QtGui import QColor, QImage, QMouseEvent, QPainter, QWheelEvent
+    from PySide6.QtGui import QColor, QImage, QKeyEvent, QMouseEvent, QPainter, QWheelEvent
     from PySide6.QtWidgets import QApplication
     qapp = QApplication(sys.argv)
 
@@ -408,6 +408,76 @@ def main():
     assert p.model.current == 4 and p.deck.title_text == "Beta Two", \
         f"自动下一首失败：current={p.model.current} title={p.deck.title_text!r}"
     shot("06_auto_next.png")
+
+    # ---------- 9. 播放列表多选 + 移出列表 ----------
+    sheet = p.pl_win.paper.sheet
+    n0 = len(p.model.tracks)
+    titles = [t.title for t in p.model.tracks]
+    assert n0 == 5, f"列表行数不对：{n0}"
+    sheet._apply_press(1, Qt.NoModifier)
+    assert sheet.sel == {1}, f"单击单选失败：{sorted(sheet.sel)}"
+    sheet._apply_press(3, Qt.ControlModifier)
+    assert sheet.sel == {1, 3}, f"Ctrl 多选失败：{sorted(sheet.sel)}"
+    sheet._apply_press(4, Qt.ShiftModifier)             # 锚点在 3 → 3..4
+    assert sheet.sel == {3, 4}, f"Shift 区间选择失败：{sorted(sheet.sel)}"
+    p.pl_win.grab().save(os.path.join(shots_dir, "07_multiselect.png"))   # 播放列表选中态
+    print(f"[smoke] saved 07_multiselect.png（选中 3、4 两行：淡蓝底 + 页边蓝条）")
+    print(f"[smoke] 列表多选 OK（单选 / Ctrl 追加 / Shift 区间 → {sorted(sheet.sel)}）")
+
+    cur_title = p.model.tracks[p.model.current].title
+    p.on_playlist_remove([1], confirm=False)            # 单首：不弹确认框
+    assert len(p.model.tracks) == n0 - 1, \
+        f"移出一首后应剩 {n0 - 1} 首，实际 {len(p.model.tracks)}"
+    assert [t.title for t in p.model.tracks] == titles[:1] + titles[2:], "移出的不是第 2 行"
+    assert p.model.tracks[p.model.current].title == cur_title, \
+        "移出别的行之后 current 没有跟着同一首走"
+    assert sheet.sel == set(), "移出之后选择没有清掉"
+    print(f"[smoke] 移出单首 OK（剩 {len(p.model.tracks)} 首，当前曲目仍是 {cur_title!r}）")
+
+    p.on_playlist_remove([p.model.current], confirm=False)   # 删掉正在放的那首
+    pump(0.2)
+    assert p.engine.path is None, "删掉正在放的曲目后引擎还记着旧文件（按播放会去 resume 它）"
+    assert not p.engine.playing, "删掉正在放的曲目后引擎还在播"
+    assert len(p.model.tracks) == n0 - 2, f"应剩 {n0 - 2} 首，实际 {len(p.model.tracks)}"
+    assert 0 <= p.model.current < len(p.model.tracks), "删当前曲目后 current 越界"
+    assert p.deck.title_text == p.model.tracks[p.model.current].title, \
+        f"磁带标题没换成待播的下一首：{p.deck.title_text!r}"
+    print(f"[smoke] 移出当前曲目 OK（引擎已卸载，磁带切到 "
+          f"{p.model.tracks[p.model.current].title!r} 待播）")
+    p.pl_win.grab().save(os.path.join(shots_dir, "08_after_remove.png"))
+    print("[smoke] saved 08_after_remove.png（移出两首后的列表）")
+
+    # ---------- 10. 列表能收焦点（为了 Delete/Ctrl+A），但快捷键仍要落到主程序 ----------
+    sheet.setFocus()
+    pump(0.05)
+    assert p.engine.path is None, "此时应该没有装载任何曲目"
+    qapp.sendEvent(sheet, QKeyEvent(QEvent.KeyPress, Qt.Key_Space, Qt.NoModifier))
+    pump(0.6)
+    assert p.engine.path is not None and p.engine.playing, \
+        "焦点在播放列表上按空格没有起播（按键转发到主程序失效）"
+    print("[smoke] 列表焦点下的快捷键 OK（空格 → 转发给主程序 → 起播）")
+
+    # ---------- 11. 启动预载 → 点播放：只允许一个解码进程 ----------
+    # 复刻"上次播放关闭软件、再打开后点播放"：_restore_session 用 _preload 把曲目
+    # 装进引擎（start_playing=False，不发声），点播放走 toggle_play → engine.resume()。
+    # 旧实现里 resume 不掐预载进程，两条 PCM 流会同时灌进缓冲（听感=两个音轨/卡顿）。
+    p.engine.unload()
+    pump(0.2)
+    p.model.set_current(0)
+    p._preload(p.model.tracks[0], 3.0)
+    pump(0.6)
+    proc0 = p.engine._proc
+    assert proc0 is not None and proc0.poll() is None, "预载没有把解码进程备好"
+    assert not p.engine.playing, "预载不该出声"
+    with p.engine._lock:
+        buf0 = sum(len(b) for b in p.engine._buf) / 192000.0
+    assert buf0 <= 4.0, f"预载缓冲没有受背压限制：{buf0:.1f}s"
+    p.want_play = False
+    p.toggle_play()
+    pump(0.8)
+    assert proc0.poll() is not None, "点播放后旧的预载解码进程还活着（这就是双音轨的来源）"
+    assert p.engine.playing and p.engine._proc is not None, "点播放没有真正开始播放"
+    print(f"[smoke] 启动预载 → 点播放 OK（预载缓冲 {buf0:.1f}s 受控，旧进程已掐掉）")
 
     print("[smoke] ALL PASS — tests/shots/ 下已更新截图")
     if saved_session is not None:              # 放回用户会话

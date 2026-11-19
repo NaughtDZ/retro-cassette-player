@@ -9,3 +9,6 @@ tools/ffmpeg/
 tools/dusk/
 icon.ico
 *.lnk
+
+# 代码地图生成物（chorography），不进仓库
+.chorography/

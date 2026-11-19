@@ -187,6 +187,12 @@ class AudioEngine(QObject):
 
     # ---------------- 解码子进程 ----------------
     def _spawn(self, path, offset):
+        # ★ 先掐掉可能还活着的旧解码进程。load/pause/seek/stop 自己会调 _close_proc，
+        #   但 resume() 不会——于是"启动预载（不发声）→ 点播放"会同时存在两个 ffmpeg：
+        #   旧的读线程还在往 self._buf 里灌，新的也灌，同一个缓冲里混进两条 PCM 流，
+        #   听感就是两个音轨/爆音/严重卡顿。放在这里当兜底，任何入口都不会漏。
+        #   （_close_proc 会把代际号 +1，旧读线程随即失效。）
+        self._close_proc()
         cmd = [self.ffmpeg_exe, "-hide_banner", "-loglevel", "error"]
         if offset > 0.05:
             cmd += ["-ss", f"{offset:.3f}"]
@@ -232,7 +238,11 @@ class AudioEngine(QObject):
                 while True:
                     with self._lock:
                         total = sum(len(b) for b in self._buf)
-                    if total <= cap or gen != self._gen or not self.playing:
+                    # ★ 这里绝不能再用 "not self.playing" 当免等条件：预载时
+                    #   playing=False，那条分支会让解码线程一路读到底，整首曲子
+                    #   （几十分钟 = 几百 MB PCM）全灌进内存，启动就卡顿。
+                    #   缓冲满或进程已被替换（代际号变了）才结束等待。
+                    if total <= cap or gen != self._gen:
                         break
                     time.sleep(0.01)
         except Exception:
@@ -528,3 +538,39 @@ class AudioEngine(QObject):
             pass
         self.position_changed.emit(0.0)
         self.playing_changed.emit(False)
+
+    def unload(self):
+        """把磁带取下来：停播并忘掉当前路径。
+
+        与 stop() 的区别是**不再记得这首**——曲目被移出播放列表时必须走这里，
+        否则按播放键会 resume 一个列表里已经不存在的文件（列表和声音对不上）。
+        之后 toggle_play() 会重新从列表里挑一首装载。
+        """
+        self.stop()
+        self._close_proc()
+        self._feed_timer.stop()
+        with self._lock:
+            self._buf.clear()
+            self._consumed = 0
+        self.path = None
+        self._failed = False
+        self.playing = False
+        self.position_changed.emit(0.0)
+        self.playing_changed.emit(False)
+
+    def shutdown(self):
+        """退出程序前调用：停掉定时器并掐死解码子进程。
+
+        不这么做的话，退出时 Python 不会主动 kill 仍在跑的 ffmpeg（subprocess 的
+        __del__ 只做回收不做终止），进程会残留到管道被系统关掉为止——用户的
+        "关掉软件后后台还有 ffmpeg"就是这么来的。
+        """
+        try:
+            self._feed_timer.stop()
+            self._pos_timer.stop()
+        except Exception:
+            pass
+        self._close_proc()
+        self.playing = False
+        with self._lock:
+            self._buf.clear()

@@ -26,6 +26,8 @@ MARGIN_RED = QColor("#e2574c")
 TEXT_MAIN = QColor("#2c3138")
 TEXT_DIM = QColor("#6a7683")
 MARK_YELLOW = QColor(255, 228, 122)
+SEL_BG = QColor(205, 226, 245)        # 选中行底：淡蓝，和荧光黄分开（当前曲目仍是黄的）
+SEL_BAR = QColor("#4a7fb5")           # 选中行在页边空白处的标记条
 
 
 class HeaderBar(QWidget):
@@ -105,6 +107,8 @@ class SheetWidget(QWidget):
     props_requested = Signal(int)
     open_folder_requested = Signal(int)
     pick_subtitle_requested = Signal(int)
+    remove_requested = Signal(list)            # 移出列表：选中的行下标
+    key_forwarded = Signal(object)             # 列表没处理的按键，交回主程序（空格/←→/N/P…）
 
     ROW_H = 30
     NUM_COL = 56          # 行号列宽
@@ -115,7 +119,10 @@ class SheetWidget(QWidget):
         self.skin = skin
         self.rows: list = []
         self.current = -1
+        self.sel: set = set()                   # 选中的行下标（单选也是它，size=1）
+        self.anchor = None                      # Shift 区间选择的锚点
         self.setAcceptDrops(True)               # 接受从资源管理器拖进来的音频
+        self.setFocusPolicy(Qt.StrongFocus)     # 键盘 Delete / Ctrl+A 需要焦点
         self._press_row = None
         self._press_pos = None
         self._drop_at = None                    # 插入位置指示（行号，可为 len）
@@ -125,6 +132,10 @@ class SheetWidget(QWidget):
     def set_rows(self, tracks, current):
         self.rows = list(tracks)
         self.current = current
+        n = len(self.rows)                      # 列表变短后，把越界的选中项丢掉
+        self.sel = {i for i in self.sel if 0 <= i < n}
+        if self.anchor is not None and not (0 <= self.anchor < n):
+            self.anchor = None
         self._resize()
         self.update()
 
@@ -197,6 +208,11 @@ class SheetWidget(QWidget):
         for i in range(first, last):
             t = self.rows[i]
             y = i * row_h
+            picked = i in self.sel
+            if picked:                                      # 选中底（当前曲目会再叠荧光黄）
+                p.setPen(Qt.NoPen)
+                p.setBrush(SEL_BG)
+                p.drawRect(26, y + 3, w - 30, row_h - 6)
             if i == self.current:
                 mark = QRectF(26, y + 3, w - 30, row_h - 6)
                 if s is not None and s.has_asset("playlist_mark"):
@@ -205,6 +221,10 @@ class SheetWidget(QWidget):
                     p.setPen(Qt.NoPen)
                     p.setBrush(MARK_YELLOW)
                     p.drawRect(26, y + 3, w - 30, row_h - 6)      # 荧光笔高亮当前行
+            if picked:                                      # 页边空白处的蓝条：压在黄底上也认得出
+                p.setPen(Qt.NoPen)
+                p.setBrush(SEL_BAR)
+                p.drawRect(6, y + 7, 4, row_h - 14)
             p.setFont(f_num)
             p.setPen(QColor("#d43c31") if i == self.current else TEXT_MAIN)
             num = f"{i + 1}."
@@ -291,9 +311,52 @@ class SheetWidget(QWidget):
                 self.files_dropped.emit(files)
             e.acceptProposedAction()
 
+    # ---------------- 选择（单击 / Ctrl / Shift） ----------------
+    def clear_selection(self):
+        if self.sel or self.anchor is not None:
+            self.sel.clear()
+            self.anchor = None
+            self.update()
+
+    def select_only(self, row):
+        self.sel = {row} if row >= 0 else set()
+        self.anchor = row if row >= 0 else None
+        self.update()
+
+    def _apply_press(self, row, mods):
+        """按下左键时的选择语义，照搬资源管理器：
+
+        * 无修饰键 → 只选这一行
+        * Ctrl → 切换这一行（已选则取消），锚点移到它
+        * Shift → 从锚点到这一行整段选中（连续按 Shift 仍从同一锚点扩）
+        * Ctrl+Shift → 把这一段并进已有选择
+        """
+        ctrl = bool(mods & Qt.ControlModifier)
+        shift = bool(mods & Qt.ShiftModifier)
+        if shift and self.anchor is not None:
+            lo, hi = sorted((self.anchor, row))
+            span = set(range(lo, hi + 1))
+            self.sel = (self.sel | span) if ctrl else span
+        elif ctrl:
+            if row in self.sel:
+                self.sel.discard(row)
+            else:
+                self.sel.add(row)
+            self.anchor = row
+        else:
+            self.sel = {row}
+            self.anchor = row
+        self.update()
+
     def mousePressEvent(self, e):
         if e.button() == Qt.LeftButton:
-            self._press_row = self._row_at(e.position())
+            row = self._row_at(e.position())
+            self.setFocus(Qt.MouseFocusReason)
+            if row < 0:
+                self.clear_selection()          # 点空白 = 取消选择
+            else:
+                self._apply_press(row, e.modifiers())
+            self._press_row = row
             self._press_pos = e.position().toPoint()
         super().mousePressEvent(e)
 
@@ -303,6 +366,10 @@ class SheetWidget(QWidget):
         if (e.position().toPoint() - self._press_pos).manhattanLength() < 8:
             return                          # 阈值：避免单击/双击被当成拖动
         row, self._press_row = self._press_row, None
+        if self.sel != {row}:
+            # 拖动排序一次只搬一行：先把选择收敛到它身上，免得"选了一片却只动了一个"，
+            # 也避免移动之后蓝条留在已经换了内容的行上
+            self.select_only(row)
         md = QMimeData()
         md.setData("application/x-retro-row", str(row).encode())
         drag = QDrag(self)
@@ -313,21 +380,67 @@ class SheetWidget(QWidget):
         self._press_row = None
         super().mouseReleaseEvent(e)
 
+    def keyPressEvent(self, e):
+        if e.key() == Qt.Key_Delete and self.sel:
+            self.remove_requested.emit(sorted(self.sel))
+            return
+        if e.key() == Qt.Key_A and (e.modifiers() & Qt.ControlModifier) and self.rows:
+            self.sel = set(range(len(self.rows)))
+            self.anchor = 0
+            self.update()
+            return
+        if e.key() == Qt.Key_Escape:
+            self.clear_selection()
+            return
+        # 列表自己能接焦点（要收 Delete/Ctrl+A），但没处理的键必须交回主程序：
+        # 否则"点一下列表再按空格暂停"就失灵了
+        self.key_forwarded.emit(e)
+
+    def _row_menu(self, row):
+        """右键某一行时的菜单。返回 (menu, {名字: QAction})，方便自检时不弹模态框。"""
+        n_sel = max(1, len(self.sel))
+        multi = n_sel > 1
+        m = QMenu(self)
+        acts = {
+            "props": m.addAction("查看属性…"),
+            "dir": m.addAction("打开所在文件夹"),
+            "sub": m.addAction("手动选择字幕…"),
+        }
+        if multi:        # 这三项只对一行有意义，多选时禁用，免得以为是"对全部执行"
+            for a in acts.values():
+                a.setEnabled(False)
+        m.addSeparator()
+        acts["remove"] = m.addAction(f"移出列表（{n_sel} 首）" if multi else "移出列表")
+        if multi:
+            acts["remove"].setShortcut("Del")
+        return m, acts
+
     def contextMenuEvent(self, e):
         row = self._row_at(e.pos())
-        if row < 0:
+        if row < 0:                              # 空白处：只提供"全选"
+            if not self.rows:
+                return
+            m = QMenu(self)
+            a_all = m.addAction("全选")
+            if m.exec(e.globalPos()) == a_all and self.rows:
+                self.sel = set(range(len(self.rows)))
+                self.anchor = 0
+                self.update()
             return
-        m = QMenu(self)
-        a_prop = m.addAction("查看属性…")
-        a_dir = m.addAction("打开所在文件夹")
-        a_sub = m.addAction("手动选择字幕…")
+        if row not in self.sel:                  # 右键没点在选中集里 → 先把选择收到这一行
+            self.select_only(row)
+        m, acts = self._row_menu(row)
         act = m.exec(e.globalPos())
-        if act == a_prop:
+        if act is None:
+            return
+        if act == acts["props"]:
             self.props_requested.emit(row)
-        elif act == a_dir:
+        elif act == acts["dir"]:
             self.open_folder_requested.emit(row)
-        elif act == a_sub:
+        elif act == acts["sub"]:
             self.pick_subtitle_requested.emit(row)
+        elif act == acts["remove"]:
+            self.remove_requested.emit(sorted(self.sel or {row}))
 
     def mouseDoubleClickEvent(self, ev):
         idx = int(ev.position().y() // self.ROW_H)
@@ -384,6 +497,8 @@ class PlaylistWindow(ShadowWindow):
     props_requested = Signal(int)
     open_folder_requested = Signal(int)
     pick_subtitle_requested = Signal(int)
+    remove_requested = Signal(list)
+    key_forwarded = Signal(object)
 
     def __init__(self, skin=None, parent=None):
         super().__init__(margin=18, blur=30)
@@ -399,6 +514,8 @@ class PlaylistWindow(ShadowWindow):
         self.paper.sheet.props_requested.connect(self.props_requested)
         self.paper.sheet.open_folder_requested.connect(self.open_folder_requested)
         self.paper.sheet.pick_subtitle_requested.connect(self.pick_subtitle_requested)
+        self.paper.sheet.remove_requested.connect(self.remove_requested)
+        self.paper.sheet.key_forwarded.connect(self.key_forwarded)
         self.paper.header.close_clicked.connect(self.hide)
 
     def rebuild(self, tracks, current):
@@ -406,3 +523,7 @@ class PlaylistWindow(ShadowWindow):
 
     def set_current(self, current):
         self.paper.set_current(current)
+
+    def clear_selection(self):
+        """列表内容变了（例如刚移出了几行）之后清掉选择，免得蓝条留在错的行上。"""
+        self.paper.sheet.clear_selection()

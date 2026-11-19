@@ -13,7 +13,7 @@ from app.log_util import install_stdout_fallback
 
 install_stdout_fallback()      # pythonw 下把 print 导向 config\app.log，出问题才有迹可查
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QLockFile, Qt, QTimer
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QFileDialog, QMenu, QMessageBox
 
@@ -94,6 +94,8 @@ class PlayerApp:
         self.pl_win.props_requested.connect(self.on_track_props)
         self.pl_win.open_folder_requested.connect(self.on_track_folder)
         self.pl_win.pick_subtitle_requested.connect(self.on_track_subtitle)
+        self.pl_win.remove_requested.connect(self.on_playlist_remove)
+        self.pl_win.key_forwarded.connect(self._forward_key_to_deck)
         self.deck._anim.swap_requested.connect(self._on_swap_fired)
 
         # ---------------- 初始布局：磁带机居中，练习册在右侧 ----------------
@@ -201,6 +203,11 @@ class PlayerApp:
     def on_playlist_reorder(self, src, dst):
         if self.model.move_track(src, dst):
             self.pl_win.rebuild(self.model.tracks, self.model.current)
+            self.pl_win.clear_selection()      # 下标整体变了，旧选择不再指着原来那几首
+
+    def _forward_key_to_deck(self, ev):
+        """焦点在播放列表上时，未处理的按键转给底座，快捷键手感保持一致。"""
+        self.deck.keyPressEvent(ev)
 
     def on_track_props(self, row):
         if not (0 <= row < len(self.model.tracks)):
@@ -247,6 +254,45 @@ class PlayerApp:
             self.lyric_win.set_manual_subtitle(t.path, p)
             if not self.lyric_win.isVisible():
                 self._toggle_lyric(True)
+
+    def on_playlist_remove(self, rows, confirm=None):
+        """把选中的曲目移出播放列表（只动列表，不碰磁盘上的文件）。
+
+        单首是明确点了菜单项，直接执行；多首时先问一句，免得 Ctrl+A 之后一个手滑清空列表。
+        """
+        n = len(self.model.tracks)
+        rows = sorted({int(r) for r in rows if 0 <= int(r) < n})
+        if not rows:
+            return
+        if confirm is None:
+            confirm = len(rows) > 1
+        if confirm:
+            ans = QMessageBox.question(
+                self.deck_win, "移出播放列表",
+                f"把选中的 {len(rows)} 首从播放列表移除？\n"
+                "只是从列表里拿掉，磁盘上的文件不会被删除。",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if ans != QMessageBox.Yes:
+                return
+        cur = self.model.current
+        dropped_current = 0 <= cur < n and cur in rows
+        if dropped_current:
+            # 正在放的那首被移走：把磁带取下来，否则按下播放会去 resume 一个
+            # 列表里已经不存在的文件（列表和声音对不上）
+            self.engine.unload()
+            self.want_play = False
+            self.deck.set_playing(False)
+        removed = self.model.remove_indices(rows)      # 内部发 changed → 重建列表
+        self.pl_win.clear_selection()
+        if dropped_current and 0 <= self.model.current < len(self.model.tracks):
+            # 画面换成"下一首待播"的磁带（标签/封面/歌词跟上，但不起播）
+            t = self.model.tracks[self.model.current]
+            sub = " · ".join(x for x in (t.artist, t.album) if x)
+            self.deck.set_labels(t.title, sub)
+            self.deck.set_progress(0.0, t.duration)
+            self._cover_for(t.path)
+            self.lyric_win.set_track(t.path, t.title)
+        print(f"[playlist] 已从列表移出 {removed} 首（剩余 {len(self.model.tracks)} 首）")
 
     def _save_settings(self):
         """退出时把音量、皮肤、效果器参数与开关、窗口位置写进配置文件。"""
@@ -470,6 +516,7 @@ class PlayerApp:
         if not paths:
             return
         self.model.load_files(paths)
+        self.pl_win.clear_selection()      # 整个列表换掉了，旧的选择没有意义
         self._probe([t.path for t in self.model.tracks])
         if self.model.current < 0 and self.model.tracks:
             self.want_play = True
@@ -515,6 +562,10 @@ class PlayerApp:
         先请求取消（探测线程每个文件之间会检查），再限时等待；实在不结束也不强杀
         —— 宁可多等一会儿，也不要留一个运行中的线程给解释器收拾。
         """
+        try:
+            self.engine.shutdown()          # 掐掉 ffmpeg 解码进程，别在后台残留
+        except Exception as e:
+            print(f"[audio] 退出清理失败：{e}")
         workers = list(self._probe_workers) + list(self._cover_workers)
         for w in workers:
             try:
@@ -733,7 +784,7 @@ class PlayerApp:
         act_lyr_through.triggered.connect(lambda checked: self._toggle_lyric_transparent(checked))
         act_about.triggered.connect(
             lambda: QMessageBox.about(self.deck_win, "复古磁带播放器",
-                                      "复古磁带播放器 v1.2.0\n"
+                                      "复古磁带播放器 v1.2.1\n"
                                       "底层：ffmpeg 解码 · PySide6 矢量界面 · Dusk TapeMachine DSP\n"
                                       "皮肤包目录：skins\\\n"
                                       "字幕：音频同目录的 .lrc / .srt / .vtt / .ass / .ssa"))
@@ -753,6 +804,21 @@ class PlayerApp:
 def main():
     app = QApplication(sys.argv)
     app.setApplicationName("Retro Cassette Player")
+    # 单实例：两个播放器同时开着会同时出声，听感就是"两个音轨"——
+    # 用户很难分辨这到底是程序 bug 还是自己多开了。锁文件放在 .cache 下，
+    # QLockFile 会核对进程是否存活，上次崩溃留下的陈旧锁会被自动接管。
+    lock_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".cache")
+    try:
+        os.makedirs(lock_dir, exist_ok=True)
+    except OSError:
+        pass
+    lock = QLockFile(os.path.join(lock_dir, "app.lock"))
+    lock.setStaleLockTime(30_000)
+    if not lock.tryLock(100):
+        QMessageBox.information(None, "复古磁带播放器",
+                                "播放器已经在运行了。\n\n"
+                                "如果没看到窗口，请先在任务管理器里结束残留的进程再打开。")
+        return
     ico = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.ico")
     if os.path.isfile(ico):
         app.setWindowIcon(QIcon(ico))         # 任务栏 / 快捷方式图标
